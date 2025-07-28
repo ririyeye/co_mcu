@@ -15,7 +15,8 @@ target("bsp")
 
     add_files(
         "Firmware/bspinit/systick.c",
-        "Firmware/bspinit/main.c"
+        "Firmware/bspinit/main.cpp"
+        , {optimize = "none"}
     )
 
     if get_config("USING_CM_BACKTRACE") then
@@ -73,7 +74,7 @@ target("bsp")
 --         "Firmware/GD32E11x_usbfs_library/driver/Source/drv_usb_core.c",
 --         "Firmware/usb_ext/*.c"
 --     )
--- 0    add_includedirs(
+--     add_includedirs(
 --         "Firmware/GD32E11x_usbfs_library/ustd/common",
 --         "Firmware/GD32E11x_usbfs_library/ustd/class/cdc",
 --         "Firmware/GD32E11x_usbfs_library/driver/Include",
@@ -97,6 +98,24 @@ target("bsp")
     add_files(
         "ringbuf/ringbuffer.c",
         "ringbuf/ringbuffer_ext.c"
+    )
+
+    add_includedirs(
+        "portable/GCC/ARM_CM4F", {public=true}
+    )
+    add_files(
+        "portable/GCC/ARM_CM4F/port.c"
+    )
+
+    -- co_mcu
+    add_includedirs(
+        "co_mcu/", {public=true}
+    )
+    add_includedirs(
+        "co_mcu/co_base/", {public=true}
+    )
+    add_files(
+        "co_mcu/back_worker.cpp"
     )
 
 target_end()

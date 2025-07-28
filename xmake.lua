@@ -13,7 +13,7 @@ includes("bsp")
 includes("rule")
 
 set_warnings("all", "extra", "pedantic")
-set_languages("c23")
+set_languages("c23", "c++23")
 
 option("USING_CM_BACKTRACE")
     set_default(false)

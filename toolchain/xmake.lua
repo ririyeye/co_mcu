@@ -22,6 +22,7 @@ toolchain("m4-arm-none-eabi")
     )
 
     add_cxxflags(
+        "-fcoroutines",
         "-fno-rtti -fno-exceptions -fno-threadsafe-statics"
     )
 

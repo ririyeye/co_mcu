@@ -3,18 +3,18 @@
    underscore) go in .c.  */
 
 #include <_ansi.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/fcntl.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
-#include <sys/time.h>
-#include <sys/times.h>
 #include <errno.h>
 #include <reent.h>
-#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/fcntl.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/times.h>
+#include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 
 #undef errno
 extern int errno;
@@ -24,60 +24,57 @@ extern int __io_getchar(void) __attribute__((weak));
 
 caddr_t _sbrk(int incr)
 {
-  extern char _end[];
-  extern char _heap_end[];
-  static char *curbrk = _end;
+    extern char  _end[];
+    extern char  _heap_end[];
+    static char* curbrk = _end;
 
-  if ((curbrk + incr < _end) || (curbrk + incr > _heap_end))
-    return (caddr_t) - 1;
+    if ((curbrk + incr < _end) || (curbrk + incr > _heap_end))
+        return (caddr_t)-1;
 
-  curbrk += incr;
-  return curbrk - incr;
+    curbrk += incr;
+    return curbrk - incr;
 }
 
 /*
  * _gettimeofday primitive (Stub function)
  * */
-int _gettimeofday (struct timeval * tp, struct timezone * tzp)
+int _gettimeofday(struct timeval* tp, struct timezone* tzp)
 {
-	(void)tp;
-  /* Return fixed data for the timezone.  */
-  if (tzp)
-    {
-      tzp->tz_minuteswest = 0;
-      tzp->tz_dsttime = 0;
+    (void)tp;
+    /* Return fixed data for the timezone.  */
+    if (tzp) {
+        tzp->tz_minuteswest = 0;
+        tzp->tz_dsttime     = 0;
     }
 
-  return 0;
+    return 0;
 }
-void initialise_monitor_handles()
-{
-}
+void initialise_monitor_handles() { }
 
 int _getpid(void)
 {
-	return 1;
+    return 1;
 }
 
 int _kill(int pid, int sig)
 {
-	(void)pid;
-	(void)sig;
-	errno = EINVAL;
-	return -1;
+    (void)pid;
+    (void)sig;
+    errno = EINVAL;
+    return -1;
 }
 
-void _exit (int status)
+void _exit(int status)
 {
-	(void)status;
-	_kill(status, -1);
-	while (1) {}
+    (void)status;
+    _kill(status, -1);
+    while (1) { }
 }
 int _write(int file, char* ptr, int len)
 {
-	(void)file;
-	(void)ptr;
-	(void)len;
+    (void)file;
+    (void)ptr;
+    (void)len;
 #if 0
     int DataIdx;
 
@@ -91,98 +88,97 @@ int _write(int file, char* ptr, int len)
 }
 int _close(int file)
 {
-	(void)file;
-	return -1;
+    (void)file;
+    return -1;
 }
-__attribute__(( used ))
-int _fstat(int file, struct stat *st)
+
+__used int _fstat(int file, struct stat* st)
 {
-	(void)file;
-	st->st_mode = S_IFCHR;
-	return 0;
+    (void)file;
+    st->st_mode = S_IFCHR;
+    return 0;
 }
-__attribute__(( used ))
-int _isatty(int file)
+
+__used int _isatty(int file)
 {
-	(void)file;
-	return 1;
+    (void)file;
+    return 1;
 }
 
 int _lseek(int file, int ptr, int dir)
 {
-	(void)file;
-	(void)ptr;
-	(void)dir;
-	return 0;
+    (void)file;
+    (void)ptr;
+    (void)dir;
+    return 0;
 }
 
-int _read(int file, char *ptr, int len)
+int _read(int file, char* ptr, int len)
 {
-	(void)file;
-	int DataIdx;
+    (void)file;
+    int DataIdx;
 
-	for (DataIdx = 0; DataIdx < len; DataIdx++)
-	{
-	  *ptr++ = __io_getchar();
-	}
+    for (DataIdx = 0; DataIdx < len; DataIdx++) {
+        *ptr++ = __io_getchar();
+    }
 
-   return len;
+    return len;
 }
 
-int _open(char *path, int flags, ...)
+int _open(char* path, int flags, ...)
 {
-	(void)path;
-	(void)flags;
-	/* Pretend like we always fail */
-	return -1;
+    (void)path;
+    (void)flags;
+    /* Pretend like we always fail */
+    return -1;
 }
 
-int _wait(int *status)
+int _wait(int* status)
 {
-	(void)status;
-	errno = ECHILD;
-	return -1;
+    (void)status;
+    errno = ECHILD;
+    return -1;
 }
 
-int _unlink(char *name)
+int _unlink(char* name)
 {
-	(void)name;
-	errno = ENOENT;
-	return -1;
+    (void)name;
+    errno = ENOENT;
+    return -1;
 }
 
-int _times(struct tms *buf)
+int _times(struct tms* buf)
 {
-	(void)buf;
-	return -1;
+    (void)buf;
+    return -1;
 }
 
-int _stat(char *file, struct stat *st)
+int _stat(char* file, struct stat* st)
 {
-	(void)file;
-	st->st_mode = S_IFCHR;
-	return 0;
+    (void)file;
+    st->st_mode = S_IFCHR;
+    return 0;
 }
 
-int _link(char *old, char *new)
+int _link(char* old, char* new)
 {
-	(void)old;
-	(void)new;
-	errno = EMLINK;
-	return -1;
+    (void)old;
+    (void)new;
+    errno = EMLINK;
+    return -1;
 }
 
 int _fork(void)
 {
-	errno = EAGAIN;
-	return -1;
+    errno = EAGAIN;
+    return -1;
 }
 
-int _execve(char *name, char **argv, char **env)
+int _execve(char* name, char** argv, char** env)
 {
-	(void)name;
-	(void)argv;
-	(void)env;
-	errno = ENOMEM;
-	return -1;
+    (void)name;
+    (void)argv;
+    (void)env;
+    errno = ENOMEM;
+    return -1;
 }

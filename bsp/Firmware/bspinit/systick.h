@@ -36,8 +36,12 @@ OF SUCH DAMAGE.
 #define SYSTICK_H
 
 #include <stdint.h>
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 /* configure systick */
 void systick_config(void);
-
+#ifdef __cplusplus
+}
+#endif
 #endif /* SYSTICK_H */

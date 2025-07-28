@@ -36,17 +36,23 @@ OF SUCH DAMAGE.
 #include "systick.h"
 #include <stdio.h>
 
-int main(void);
+extern "C" int usr_main(int argc, char** argv);
 
-int bsp_main(void)
+uint64_t total_tick = 0;
+
+extern "C" void SysTick_Handler(void)
+{
+    SysTick->CTRL;
+    total_tick++;
+}
+
+extern "C" int bsp_main(void)
 {
     nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
     /* configure systick */
     systick_config();
 
-    main();
+    usr_main(0, nullptr);
 
-    while (1) {
-        
-    }
+    while (1) { }
 }

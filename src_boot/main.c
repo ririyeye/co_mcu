@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 
-int main(void)
+int usr_main(int argc, char** argv)
 {
 
     while (1) {
