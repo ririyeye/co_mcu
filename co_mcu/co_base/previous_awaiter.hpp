@@ -2,7 +2,7 @@
 
 #include <coroutine>
 
-namespace co_task {
+namespace co_mcu {
 
 struct PreviousAwaiter {
     std::coroutine_handle<> mPrevious = nullptr;

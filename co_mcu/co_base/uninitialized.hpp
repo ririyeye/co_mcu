@@ -4,7 +4,7 @@
 #include <memory>
 #include "non_void_helper.hpp"
 
-namespace co_task {
+namespace co_mcu {
 
 template <class T>
 struct Uninitialized {

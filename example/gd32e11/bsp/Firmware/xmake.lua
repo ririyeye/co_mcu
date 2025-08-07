@@ -5,6 +5,8 @@ target("gd32e11_bsp_firmware")
     set_kind("static")
 
     add_files("gcc_startup/startup_gd32e11x.S")
+    add_files("syscalls.c")
+    add_files("system_gd32e11x.c")
 
     add_files(
         "GD32E11x_standard_peripheral/Source/gd32e11x_adc.c",

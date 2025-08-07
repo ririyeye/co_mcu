@@ -5,7 +5,7 @@
 #include "workqueue.h"
 #include <chrono>
 
-namespace co_task {
+namespace co_mcu {
 
 struct sem_req : worknode {
     sem_req() { INIT_LIST_HEAD(&ws_node); }

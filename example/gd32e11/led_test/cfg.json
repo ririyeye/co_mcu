@@ -1,0 +1,16 @@
+{
+    "flash": {
+        "addr": "0x08000000",
+        "length": "128K",
+        "origin": [
+            {
+                "name": "led",
+                "length": "-"
+            }
+        ]
+    },
+    "ram": {
+        "addr": "0x20000000",
+        "length": "32K"
+    }
+}

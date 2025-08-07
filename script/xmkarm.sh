@@ -12,6 +12,6 @@ xmake f -p cross \
     -y -vD \
     -m minsizerel \
     -P .
-xmake -D
+xmake -vD
 xmake install -o install
 

@@ -5,7 +5,7 @@
 #include <coroutine>
 #include <utility>
 
-namespace co_task {
+namespace co_mcu {
 
 #define USE_EXCEPTION 0
 #if USE_EXCEPTION
@@ -141,4 +141,4 @@ template <class T, class P> void spawn_task(Task<T, P> const &t) {
   a.await_suspend(std::noop_coroutine()).resume();
 }
 
-} // namespace co_task
+} // namespace co_mcu

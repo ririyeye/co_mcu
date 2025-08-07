@@ -1,6 +1,6 @@
-target("co_task")
+target("co_mcu")
 
-    add_linkgroups("co_task", { whole = true, public = true })
+    add_linkgroups("co_mcu", { whole = true, public = true })
 
     set_kind("static")
 

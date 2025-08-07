@@ -5,7 +5,7 @@
 #include "workqueue.h"
 #include <chrono>
 
-namespace co_task {
+namespace co_mcu {
 
 struct delayed_worknode : worknode {
     std::chrono::steady_clock::time_point expire;

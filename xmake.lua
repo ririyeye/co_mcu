@@ -9,6 +9,7 @@ set_policy("package.cmake_generator.ninja", true)
 -- set_policy("diagnosis.check_build_deps", true)
 
 includes("toolchain")
+includes("rule")
 includes("co_mcu")
 includes("example")
 

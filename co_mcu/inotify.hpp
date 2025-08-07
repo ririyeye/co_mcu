@@ -6,7 +6,7 @@
 #include <chrono>
 #include <stdatomic.h>
 
-namespace co_task {
+namespace co_mcu {
 
 struct notify_req_base{
     list_head notify_node;

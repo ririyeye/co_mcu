@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace co_task {
+namespace co_mcu {
 
 template <class T = void>
 struct NonVoidHelper {
