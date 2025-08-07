@@ -18,7 +18,11 @@ target("gd32e11_bsp")
         ".", {public=true}
     )
 
-    add_files("co_driver/*.cpp")
+    add_files(
+        "co_driver/co_uart.cpp"
+        , {optimize = "none"}
+    )
+
     add_includedirs(
         "co_driver", {public=true}
     )

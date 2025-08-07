@@ -3,13 +3,27 @@ extern "C" {
 }
 #include "semaphore.hpp"
 #include "syswork.hpp"
+struct UART_FLG {
+    uint32_t tx_not_rx  : 1;
+    uint32_t rx_timeout : 8;
+    uint32_t fast_cb    : 1;
+};
+
+struct uart_session : worknode {
+    uint8_t*        buff;
+    uint32_t        len;
+    uint32_t        cur_len; // 当前已传输长度
+    struct UART_FLG flg;
+
+    struct uart_handle* puart_handle;
+};
 
 struct uart_handle : worknode {
     explicit uart_handle(const struct uart_hard_info* info) : mInfo(info), sem(get_sys_workqueue(), 1, 1) { }
 
     uint32_t is_init : 1;
 
-    int baud_rate;
+    int baud_rate = 115200;
 
     const struct uart_hard_info* mInfo;
 
@@ -40,7 +54,6 @@ static const struct uart_hard_info hard_u0 = {
     .rcu_uart     = RCU_USART0,
     .uart_periph  = USART0,
     .uart_irq_num = USART0_IRQn,
-
     .uart_pin_cfg = uart0_pin_cfg,
 };
 
@@ -48,7 +61,7 @@ struct uart_handle uart_0(&hard_u0);
 
 static void uart_hard_init(const struct uart_hard_info* phard, int baud_rate)
 {
-    NVIC_SetPriority(phard->uart_irq_num, 0x00U);
+    nvic_irq_enable(phard->uart_irq_num, 0, 0);
 
     rcu_periph_clock_enable(phard->rcu_uart);
     /* USART configure */
@@ -94,4 +107,188 @@ struct uart_handle* uart_handle_get(int num)
 co_mcu::semaphore& uart_handle_get(struct uart_handle* puart)
 {
     return puart->sem;
+}
+
+static void uart_stop_rx(const struct uart_hard_info* phard)
+{
+    usart_receiver_timeout_disable(phard->uart_periph);
+    usart_interrupt_disable(phard->uart_periph, USART_INT_RBNE);
+    usart_interrupt_disable(phard->uart_periph, USART_INT_RT);
+    usart_flag_clear(phard->uart_periph, USART_FLAG_RT);
+}
+
+static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod);
+
+static void uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
+{
+    workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+
+    if (!list_empty(&phandle->list_work_rx)) {
+
+        worknode*     pbase = list_first_entry(&phandle->list_work_rx, worknode, ws_node);
+        uart_session* pnxt  = static_cast<uart_session*>(pbase);
+
+        uart_setup_rx(phandle, pnxt);
+    }
+}
+
+static void _uart_irq_handle(struct uart_handle* phandle)
+{
+    const struct uart_hard_info* phard = phandle->mInfo;
+
+    // receive timeout
+    if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_RT)) {
+        uart_stop_rx(phard);
+        if (list_empty(&phandle->list_work_rx)) {
+            return;
+        }
+        worknode*     pbase = list_first_entry(&phandle->list_work_rx, worknode, ws_node);
+        uart_session* pnod  = static_cast<uart_session*>(pbase);
+
+        uart_rx_handle(phandle, pnod);
+    }
+
+    /* receive data */
+    if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_RBNE)) {
+        if (list_empty(&phandle->list_work_rx)) {
+            uart_stop_rx(phard);
+            return;
+        }
+
+        worknode*     pbase = list_first_entry(&phandle->list_work_rx, worknode, ws_node);
+        uart_session* pnod  = static_cast<uart_session*>(pbase);
+
+        pnod->buff[pnod->cur_len++] = usart_data_receive(phard->uart_periph);
+
+        if (pnod->cur_len >= pnod->len) {
+            uart_stop_rx(phard);
+            uart_rx_handle(phandle, pnod);
+        }
+    }
+    /* transmit data */
+    if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_TBE)) {
+        if (list_empty(&phandle->list_work_tx)) {
+            usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
+            return;
+        }
+
+        worknode*     pbase = list_first_entry(&phandle->list_work_tx, worknode, ws_node);
+        uart_session* pnod  = static_cast<uart_session*>(pbase);
+        usart_data_transmit(phard->uart_periph, pnod->buff[pnod->cur_len++]);
+        if (pnod->cur_len >= pnod->len) {
+            list_del(&pnod->ws_node);
+            workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+
+            if (list_empty(&phandle->list_work_tx)) {
+                usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
+            }
+        }
+    }
+}
+
+static void uart_irq_handle(struct uart_handle* phandle)
+{
+    uint32_t lk = lock_acquire();
+    _uart_irq_handle(phandle);
+    lock_release(lk);
+}
+
+extern "C" void USART0_IRQHandler(void)
+{
+    uart_irq_handle(&uart_0);
+}
+
+static void uart_setup_tx(struct uart_handle* phandle)
+{
+    usart_interrupt_enable(phandle->mInfo->uart_periph, USART_INT_TBE);
+}
+
+static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod)
+{
+    usart_interrupt_enable(phandle->mInfo->uart_periph, USART_INT_RBNE);
+
+    if (pnod->flg.rx_timeout > 0) {
+        usart_receiver_timeout_enable(phandle->mInfo->uart_periph);
+        usart_receiver_timeout_threshold_config(phandle->mInfo->uart_periph, pnod->flg.rx_timeout);
+
+        usart_interrupt_enable(phandle->mInfo->uart_periph, USART_INT_RT);
+    }
+}
+
+static int _uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
+{
+    uint32_t tx_setup = 0;
+    uint32_t rx_setup = 0;
+
+    auto flg = psess.flg;
+
+    // 第一个工作节点 使能 UART
+    if (flg.tx_not_rx && list_empty(&handle->list_work_tx)) {
+        tx_setup = 1;
+    }
+
+    if (!flg.tx_not_rx && list_empty(&handle->list_work_rx)) {
+        rx_setup = 1;
+    }
+
+    if (flg.tx_not_rx) {
+        list_add_tail(&psess.ws_node, &handle->list_work_tx);
+    } else {
+        list_add_tail(&psess.ws_node, &handle->list_work_rx);
+    }
+
+    if (tx_setup) {
+        uart_setup_tx(handle);
+    }
+
+    if (rx_setup) {
+        uart_setup_rx(handle, &psess);
+    }
+
+    return 0;
+}
+
+static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
+{
+    uint32_t lk  = lock_acquire();
+    int      ret = _uart_ext_transfer_cb(handle, psess);
+    lock_release(lk);
+    return ret;
+}
+
+co_mcu::Task<uart_handle*, co_mcu::work_Promise<uart_handle*>> wait_uart_hd(int num)
+{
+    struct uart_handle* puart = uart_handle_get(num);
+    if (!puart) {
+        co_return nullptr; // 如果没有获取到句柄，直接返回空指针
+    }
+
+    co_await co_mcu::SemReqAwaiter(uart_handle_get(puart));
+    co_return puart;
+}
+
+co_mcu::Task<int, co_mcu::work_Promise<int>> uart_transfer(uart_handle* phd, const uint8_t* data, size_t len, int tx)
+{
+    struct tx_uart_session : uart_session {
+        explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { }
+        co_mcu::semaphore cpl_inotify;
+    };
+
+    tx_uart_session node;
+    node.puart_handle  = phd;
+    node.buff          = const_cast<uint8_t*>(data);
+    node.len           = len;
+    node.cur_len       = 0;
+    node.flg.tx_not_rx = !!tx; // 仅发送数据，不接收
+
+    node.func = [](struct worknode* pws) {
+        tx_uart_session* psess = static_cast<tx_uart_session*>(pws);
+        psess->cpl_inotify.release();
+    };
+
+    uart_ext_transfer_cb(phd, node);
+
+    co_await co_mcu::SemReqAwaiter(node.cpl_inotify);
+
+    co_return node.cur_len;
 }

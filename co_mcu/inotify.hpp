@@ -3,12 +3,11 @@
 #include "lock.h"
 #include "worker.hpp"
 #include "workqueue.h"
-#include <chrono>
 #include <stdatomic.h>
 
 namespace co_mcu {
 
-struct notify_req_base{
+struct notify_req_base {
     list_head notify_node;
 };
 
@@ -26,9 +25,9 @@ private:
     {
         notify_req_base* pos;
         notify_req_base* n;
-        int         ret    = 0;
-        uint32_t    lk     = lock_acquire();
-        int         curcnt = req_cnt;
+        int              ret    = 0;
+        uint32_t         lk     = lock_acquire();
+        int              curcnt = req_cnt;
         list_for_each_entry_safe (pos, n, &acquire_list, notify_node, notify_req_base) {
             if (req_cnt > 0) {
                 if (curcnt <= 0) {
@@ -117,7 +116,7 @@ struct NotifyReqAwaiter : notify_req {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<work_Promise<void>> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);
