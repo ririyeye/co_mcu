@@ -20,7 +20,7 @@ target("gd32e11_bsp")
 
     add_files(
         "co_driver/co_uart.cpp"
-        , {optimize = "none"}
+        -- , {optimize = "none"}
     )
 
     add_includedirs(

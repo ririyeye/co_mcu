@@ -9,18 +9,18 @@ void usr_tick()
 
 co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
 {
-    auto hd = co_await wait_uart_hd(0);
+    auto hd   = UartManager(0);
+    bool succ = co_await hd.init();
 
-    if(!hd) {
+    if (!succ) {
         co_return;
     }
 
     while (1) {
         const char hello[] = "hello world\r\n";
-        co_await uart_transfer(hd, (const uint8_t*)hello, sizeof(hello), 1);
+        co_await hd.uart_transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
         co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
     }
-    
 
     co_return;
 }

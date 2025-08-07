@@ -1,6 +1,7 @@
 extern "C" {
 #include "gd32e11x_rcu.h"
 }
+#include "co_uart.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
 struct UART_FLG {
@@ -256,18 +257,7 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
     return ret;
 }
 
-co_mcu::Task<uart_handle*, co_mcu::Work_Promise<uart_handle*>> wait_uart_hd(int num)
-{
-    struct uart_handle* puart = uart_handle_get(num);
-    if (!puart) {
-        co_return nullptr; // 如果没有获取到句柄，直接返回空指针
-    }
-
-    co_await co_mcu::SemReqAwaiter(uart_handle_get(puart));
-    co_return puart;
-}
-
-co_mcu::Task<int, co_mcu::Work_Promise<int>> uart_transfer(uart_handle* phd, const uint8_t* data, size_t len, int tx)
+co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
         explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { }
@@ -275,7 +265,7 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>> uart_transfer(uart_handle* phd, con
     };
 
     tx_uart_session node;
-    node.puart_handle  = phd;
+    node.puart_handle  = handle_;
     node.buff          = const_cast<uint8_t*>(data);
     node.len           = len;
     node.cur_len       = 0;
@@ -286,9 +276,35 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>> uart_transfer(uart_handle* phd, con
         psess->cpl_inotify.release();
     };
 
-    uart_ext_transfer_cb(phd, node);
+    uart_ext_transfer_cb(handle_, node);
 
     co_await co_mcu::SemReqAwaiter(node.cpl_inotify);
 
     co_return node.cur_len;
+}
+
+co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UartManager::init()
+{
+    if (handle_) {
+        co_return true; // 已经初始化
+    }
+
+    auto tmp_handle = uart_handle_get(uart_num_);
+    if (!tmp_handle) {
+        co_return false; // 获取句柄失败
+    }
+
+    co_await co_mcu::SemReqAwaiter(uart_handle_get(handle_));
+
+    handle_ = tmp_handle;
+
+    co_return true;
+}
+
+UartManager::~UartManager()
+{
+    if (handle_) {
+        uart_handle_get(handle_).release();
+        handle_ = nullptr;
+    }
 }

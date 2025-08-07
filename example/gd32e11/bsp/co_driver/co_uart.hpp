@@ -1,12 +1,14 @@
-#include "semaphore.hpp"
 #include "syswork.hpp"
 
 struct uart_handle;
+struct UartManager {
+public:
+    UartManager(int uart_num) : uart_num_(uart_num), handle_(nullptr) { }
+    ~UartManager();
+    co_mcu::Task<bool, co_mcu::Work_Promise<bool>> init();
+    co_mcu::Task<int, co_mcu::Work_Promise<int>>   uart_transfer(uint8_t* data, size_t len, int tx);
 
-struct uart_handle* uart_handle_get(int num);
-co_mcu::Semaphore&  uart_handle_get(struct uart_handle* puart);
-
-co_mcu::Task<uart_handle*, co_mcu::Work_Promise<uart_handle*>> wait_uart_hd(int num);
-
-co_mcu::Task<int, co_mcu::Work_Promise<int>>
-uart_transfer(uart_handle* phd, const uint8_t* data, size_t len, int txflg);
+private:
+    int          uart_num_;
+    uart_handle* handle_;
+};
