@@ -120,7 +120,7 @@ static void uart_stop_rx(const struct uart_hard_info* phard)
 
 static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod);
 
-static void uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
+static int uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
 {
     workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
 
@@ -131,29 +131,31 @@ static void uart_rx_handle(struct uart_handle* phandle, struct uart_session* pno
 
         uart_setup_rx(phandle, pnxt);
     }
+    return 1;
 }
 
-static void _uart_irq_handle(struct uart_handle* phandle)
+static int _uart_irq_handle(struct uart_handle* phandle)
 {
-    const struct uart_hard_info* phard = phandle->mInfo;
+    int retcnt = 0;
 
+    const struct uart_hard_info* phard = phandle->mInfo;
     // receive timeout
     if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_RT)) {
         uart_stop_rx(phard);
         if (list_empty(&phandle->list_work_rx)) {
-            return;
+            return retcnt;
         }
         worknode*     pbase = list_first_entry(&phandle->list_work_rx, worknode, ws_node);
         uart_session* pnod  = static_cast<uart_session*>(pbase);
 
-        uart_rx_handle(phandle, pnod);
+        retcnt += uart_rx_handle(phandle, pnod);
     }
 
     /* receive data */
     if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_RBNE)) {
         if (list_empty(&phandle->list_work_rx)) {
             uart_stop_rx(phard);
-            return;
+            return retcnt;
         }
 
         worknode*     pbase = list_first_entry(&phandle->list_work_rx, worknode, ws_node);
@@ -163,14 +165,14 @@ static void _uart_irq_handle(struct uart_handle* phandle)
 
         if (pnod->cur_len >= pnod->len) {
             uart_stop_rx(phard);
-            uart_rx_handle(phandle, pnod);
+            retcnt += uart_rx_handle(phandle, pnod);
         }
     }
     /* transmit data */
     if (RESET != usart_interrupt_flag_get(phard->uart_periph, USART_INT_FLAG_TBE)) {
         if (list_empty(&phandle->list_work_tx)) {
             usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
-            return;
+            return retcnt;
         }
 
         worknode*     pbase = list_first_entry(&phandle->list_work_tx, worknode, ws_node);
@@ -179,19 +181,25 @@ static void _uart_irq_handle(struct uart_handle* phandle)
         if (pnod->cur_len >= pnod->len) {
             list_del(&pnod->ws_node);
             workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
-
+            retcnt++;
             if (list_empty(&phandle->list_work_tx)) {
                 usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
             }
         }
     }
+
+    return retcnt;
 }
 
 static void uart_irq_handle(struct uart_handle* phandle)
 {
-    uint32_t lk = lock_acquire();
-    _uart_irq_handle(phandle);
+    uint32_t lk  = lock_acquire();
+    int      evt = _uart_irq_handle(phandle);
     lock_release(lk);
+
+    if (evt) {
+        workqueue_trig_once(&get_sys_workqueue());
+    }
 }
 
 extern "C" void USART0_IRQHandler(void)
