@@ -1,3 +1,6 @@
+extern "C" {
+#include "gd32e11x_misc.h"
+}
 #include "co_uart.hpp"
 #include "systick.h"
 #include "syswork.hpp"
@@ -43,6 +46,7 @@ void usr_loop(void)
 
 extern "C" int main()
 {
+    nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
     systick_config();
     usr_init();
     while (1) {
