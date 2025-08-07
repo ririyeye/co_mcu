@@ -57,11 +57,11 @@
             }
         },
         {
-            "name": "linux-app",
+            "name": "linux-led",
             "cwd": "${workspaceFolder}",
-            "executable": "install/bin/app",
+            "executable": "install/bin/led",
             "symbolFiles": [
-                "install/bin/app.sym"
+                "install/bin/led.sym"
             ],
             "gdbPath": "gdb-multiarch",
             "request": "launch",
@@ -70,7 +70,7 @@
             // "ipAddress": "192.168.30.32",
             "gdbTarget": "192.168.30.50:2331",
             "device": "gd32e11x",
-            "rtos": "FreeRTOS",
+            // "rtos": "FreeRTOS",
             "runToEntryPoint": "Reset_Handler",
             "servertype": "external",
             "breakAfterReset": true,

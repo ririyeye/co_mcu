@@ -3,10 +3,12 @@ target("led")
 
     add_deps("co_mcu")
     add_deps("gd32e11_bsp_firmware")
+    add_deps("common")
 
 
     add_files(
         "main.cpp"
+        -- , {optimize = "none"}
     )
     add_ldflags(
         "-Wl,-Map=build/led.map",
@@ -24,10 +26,3 @@ target("led")
 
 
 target_end()
-
-
-
-
-
-
-
