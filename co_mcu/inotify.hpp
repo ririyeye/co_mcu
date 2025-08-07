@@ -117,7 +117,7 @@ struct NotifyReqAwaiter : notify_req {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<work_Promise> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<work_Promise<void>> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);
@@ -134,7 +134,7 @@ struct NotifyReqAwaiter : notify_req {
     void await_resume() const noexcept { }
 };
 
-inline Task<void, work_Promise> wait_inotify(inotify& sem)
+inline Task<void, work_Promise<void>> wait_inotify(inotify& sem)
 {
     co_return co_await NotifyReqAwaiter(sem);
 }

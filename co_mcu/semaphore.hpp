@@ -103,6 +103,7 @@ public:
     }
 };
 
+template <class T>
 struct SemReqAwaiter : sem_req {
 
     explicit SemReqAwaiter(semaphore& sem) : _semaphore(sem) { }
@@ -112,7 +113,7 @@ struct SemReqAwaiter : sem_req {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<work_Promise> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<work_Promise<T>> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);
@@ -129,9 +130,9 @@ struct SemReqAwaiter : sem_req {
     void await_resume() const noexcept { }
 };
 
-inline Task<void, work_Promise> wait_sem(semaphore& sem)
+inline Task<void, work_Promise<void>> wait_sem(semaphore& sem)
 {
-    co_return co_await SemReqAwaiter(sem);
+    co_return co_await SemReqAwaiter<void>(sem);
 }
 
 }

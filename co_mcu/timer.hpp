@@ -131,7 +131,7 @@ struct DelayAwaiter : delayed_worknode {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<work_Promise> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<work_Promise<void>> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);
@@ -151,7 +151,7 @@ struct DelayAwaiter : delayed_worknode {
     }
 };
 
-inline Task<void, work_Promise> delay_ms(struct timer_check_queue& dly_wkq, uint32_t ms)
+inline Task<void, work_Promise<void>> delay_ms(struct timer_check_queue& dly_wkq, uint32_t ms)
 {
     co_return co_await DelayAwaiter(dly_wkq, ms);
 }
