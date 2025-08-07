@@ -84,6 +84,20 @@ public:
         lock_release(lk);
     }
 
+    bool try_acquire()
+    {
+        int succ = 0;
+
+        uint32_t lk = lock_acquire();
+        if (_cur_val > 0) {
+            _cur_val--;
+            succ = 1;
+        }
+        lock_release(lk);
+
+        return succ;
+    }
+
     void release()
     {
         int      post_flg = 0;
@@ -105,18 +119,23 @@ public:
 
 struct SemReqAwaiter : Sem_req {
 
-    explicit SemReqAwaiter(Semaphore& sem) : _semaphore(sem) { }
+    explicit SemReqAwaiter(Semaphore& sem) : mSemaphore(sem) { INIT_LIST_HEAD(&ws_node); }
 
     std::coroutine_handle<> mCoroutine;
-    Semaphore&              _semaphore;
+    Semaphore&              mSemaphore;
 
-    bool await_ready() const noexcept { return false; }
+    bool await_ready() const noexcept
+    {
+        if (mSemaphore.try_acquire()) {
+            return true; // already acquired
+        }
+        return false;
+    }
 
     void await_suspend(std::coroutine_handle<> coroutine) noexcept
     {
         mCoroutine = coroutine;
-        INIT_LIST_HEAD(&ws_node);
-        func = [](struct worknode* pws) {
+        func       = [](struct worknode* pws) {
             SemReqAwaiter* self = static_cast<SemReqAwaiter*>(pws);
 
             if (self->mCoroutine) {
@@ -124,14 +143,15 @@ struct SemReqAwaiter : Sem_req {
             }
         };
 
-        _semaphore.acquire(*this);
+        mSemaphore.acquire(*this);
     };
     void await_resume() const noexcept { }
 };
 
-inline Task<void, Work_Promise<void>> wait_sem(Semaphore& sem)
+inline auto wait_sem(Semaphore& sem)
 {
-    co_return co_await SemReqAwaiter(sem);
+    return SemReqAwaiter(sem);
 }
+
 
 }

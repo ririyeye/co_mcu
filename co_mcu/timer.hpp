@@ -151,9 +151,9 @@ struct DelayAwaiter : Delayed_worknode {
     }
 };
 
-inline Task<void, Work_Promise<void>> delay_ms(struct Timer_check_queue& dly_wkq, uint32_t ms)
+inline auto delay_ms(struct Timer_check_queue& dly_wkq, uint32_t ms)
 {
-    co_return co_await DelayAwaiter(dly_wkq, ms);
+    return DelayAwaiter(dly_wkq, ms);
 }
 
 }

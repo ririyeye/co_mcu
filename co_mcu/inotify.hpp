@@ -112,7 +112,7 @@ struct NotifyReqAwaiter : notify_req {
     ~NotifyReqAwaiter() { mInotify.unregist(*this); }
 
     std::coroutine_handle<> mCoroutine;
-    Notify&                mInotify;
+    Notify&                 mInotify;
 
     bool await_ready() const noexcept { return false; }
 
@@ -133,8 +133,8 @@ struct NotifyReqAwaiter : notify_req {
     void await_resume() const noexcept { }
 };
 
-inline Task<void, work_Promise<void>> wait_inotify(Notify& sem)
+inline auto wait_inotify(Notify& sem)
 {
-    co_return co_await NotifyReqAwaiter(sem);
+    return NotifyReqAwaiter(sem);
 }
 }
