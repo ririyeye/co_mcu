@@ -6,7 +6,7 @@ target("common")
     set_kind("static")
 
     add_deps("co_mcu")
-    add_deps("gd32e11_bsp_firmware")
+    add_deps("gd32e11_bsp")
 
     add_includedirs(
         ".", {public=true}

@@ -2,7 +2,7 @@ target("led")
     set_kind("binary")
 
     add_deps("co_mcu")
-    add_deps("gd32e11_bsp_firmware")
+    add_deps("gd32e11_bsp")
     add_deps("common")
 
 
