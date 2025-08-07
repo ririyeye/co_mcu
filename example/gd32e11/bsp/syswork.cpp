@@ -14,14 +14,14 @@ struct executor_wq : workqueue {
 };
 
 executor_wq               executor;
-co_mcu::timer_check_queue timer(executor);
+co_mcu::Timer_check_queue timer(executor);
 
 struct workqueue& get_sys_workqueue(void)
 {
     return executor;
 }
 
-co_mcu::timer_check_queue& get_sys_timer(void)
+co_mcu::Timer_check_queue& get_sys_timer(void)
 {
     return timer;
 }

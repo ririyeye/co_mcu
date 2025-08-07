@@ -30,7 +30,7 @@ struct uart_handle : worknode {
     LIST_HEAD(list_work_tx);
     LIST_HEAD(list_work_rx);
 
-    co_mcu::semaphore sem;
+    co_mcu::Semaphore sem;
 };
 
 struct uart_hard_info {
@@ -104,7 +104,7 @@ struct uart_handle* uart_handle_get(int num)
     return phandle;
 }
 
-co_mcu::semaphore& uart_handle_get(struct uart_handle* puart)
+co_mcu::Semaphore& uart_handle_get(struct uart_handle* puart)
 {
     return puart->sem;
 }
@@ -256,7 +256,7 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
     return ret;
 }
 
-co_mcu::Task<uart_handle*, co_mcu::work_Promise<uart_handle*>> wait_uart_hd(int num)
+co_mcu::Task<uart_handle*, co_mcu::Work_Promise<uart_handle*>> wait_uart_hd(int num)
 {
     struct uart_handle* puart = uart_handle_get(num);
     if (!puart) {
@@ -267,11 +267,11 @@ co_mcu::Task<uart_handle*, co_mcu::work_Promise<uart_handle*>> wait_uart_hd(int 
     co_return puart;
 }
 
-co_mcu::Task<int, co_mcu::work_Promise<int>> uart_transfer(uart_handle* phd, const uint8_t* data, size_t len, int tx)
+co_mcu::Task<int, co_mcu::Work_Promise<int>> uart_transfer(uart_handle* phd, const uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
         explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { }
-        co_mcu::semaphore cpl_inotify;
+        co_mcu::Semaphore cpl_inotify;
     };
 
     tx_uart_session node;

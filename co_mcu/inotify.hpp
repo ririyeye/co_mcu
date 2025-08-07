@@ -13,7 +13,7 @@ struct notify_req_base {
 
 struct notify_req : worknode, notify_req_base { };
 
-struct inotify : worknode {
+struct Notify : worknode {
 private:
     workqueue& _executor;
     list_head  acquire_list;
@@ -69,12 +69,12 @@ private:
     }
 
 public:
-    explicit inotify(workqueue& executor) : _executor(executor)
+    explicit Notify(workqueue& executor) : _executor(executor)
     {
         INIT_LIST_HEAD(&ws_node);
         INIT_LIST_HEAD(&acquire_list);
         func = [](struct worknode* work) {
-            inotify* tcq = static_cast<inotify*>(work);
+            Notify* tcq = static_cast<Notify*>(work);
             tcq->inotify_cb();
         };
     }
@@ -107,12 +107,12 @@ public:
 };
 struct NotifyReqAwaiter : notify_req {
 
-    explicit NotifyReqAwaiter(inotify& inotify) : mInotify(inotify) { }
+    explicit NotifyReqAwaiter(Notify& inotify) : mInotify(inotify) { }
 
     ~NotifyReqAwaiter() { mInotify.unregist(*this); }
 
     std::coroutine_handle<> mCoroutine;
-    inotify&                mInotify;
+    Notify&                mInotify;
 
     bool await_ready() const noexcept { return false; }
 
@@ -133,7 +133,7 @@ struct NotifyReqAwaiter : notify_req {
     void await_resume() const noexcept { }
 };
 
-inline Task<void, work_Promise<void>> wait_inotify(inotify& sem)
+inline Task<void, work_Promise<void>> wait_inotify(Notify& sem)
 {
     co_return co_await NotifyReqAwaiter(sem);
 }

@@ -7,7 +7,7 @@ void usr_tick()
     get_sys_timer().tick_update();
 }
 
-co_mcu::Task<void, co_mcu::work_Promise<void>> test_task()
+co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
 {
     auto hd = co_await wait_uart_hd(0);
 

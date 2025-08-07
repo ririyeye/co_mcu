@@ -7,16 +7,16 @@
 
 namespace co_mcu {
 
-struct delayed_worknode : worknode {
+struct Delayed_worknode : worknode {
     std::chrono::steady_clock::time_point expire;
-    delayed_worknode*                     child   = nullptr;
-    delayed_worknode*                     sibling = nullptr;
+    Delayed_worknode*                     child   = nullptr;
+    Delayed_worknode*                     sibling = nullptr;
 };
 
-struct timer_check_queue : worknode {
+struct Timer_check_queue : worknode {
 private:
     workqueue&        _executor;
-    delayed_worknode* heap_root;
+    Delayed_worknode* heap_root;
 
     /**
      * @brief 合并两个最小堆（pairing heap）的根节点，返回新的根节点
@@ -29,7 +29,7 @@ private:
      *    - 当 b 是新根时，a->sibling 指向 b->child，b->child 更新为 a。
      * 4. 返回合并后的新根，保持 pairing heap 的结构。
      */
-    static delayed_worknode* heap_meld(delayed_worknode* a, delayed_worknode* b) noexcept
+    static Delayed_worknode* heap_meld(Delayed_worknode* a, Delayed_worknode* b) noexcept
     {
         if (!a)
             return b;
@@ -57,20 +57,20 @@ private:
      * 5. 递归对 rest 调用 two_pass_merge，得到中间堆 root2；
      * 6. 最后用 heap_meld 合并 root1 和 root2，并返回最终堆根。
      */
-    static delayed_worknode* two_pass_merge(delayed_worknode* node) noexcept
+    static Delayed_worknode* two_pass_merge(Delayed_worknode* node) noexcept
     {
         if (!node || !node->sibling)
             return node;
-        delayed_worknode* a    = node;
-        delayed_worknode* b    = a->sibling;
-        delayed_worknode* rest = b->sibling;
+        Delayed_worknode* a    = node;
+        Delayed_worknode* b    = a->sibling;
+        Delayed_worknode* rest = b->sibling;
         a->sibling             = nullptr;
         b->sibling             = nullptr;
         return heap_meld(heap_meld(a, b), two_pass_merge(rest));
     }
 
     // 删除最小元素（根）并返回新的堆
-    static delayed_worknode* delete_min(delayed_worknode* root) noexcept { return two_pass_merge(root->child); }
+    static Delayed_worknode* delete_min(Delayed_worknode* root) noexcept { return two_pass_merge(root->child); }
 
     void tim_chk_cb()
     {
@@ -78,7 +78,7 @@ private:
         int      trig_flg = 0;
         uint32_t lk       = lock_acquire();
         while (heap_root && heap_root->expire <= now) {
-            delayed_worknode* dpos = heap_root;
+            Delayed_worknode* dpos = heap_root;
             heap_root              = delete_min(heap_root);
             workqueue_add_new_nolock(&_executor, dpos);
             trig_flg = 1;
@@ -90,17 +90,17 @@ private:
     }
 
 public:
-    explicit timer_check_queue(workqueue& executor) : _executor(executor)
+    explicit Timer_check_queue(workqueue& executor) : _executor(executor)
     {
         INIT_LIST_HEAD(&ws_node);
         heap_root = nullptr;
         func      = [](struct worknode* work) {
-            timer_check_queue* tcq = static_cast<timer_check_queue*>(work);
+            Timer_check_queue* tcq = static_cast<Timer_check_queue*>(work);
             tcq->tim_chk_cb();
         };
     }
 
-    void post_delayed_work(delayed_worknode* dwork, uint32_t ms)
+    void post_delayed_work(Delayed_worknode* dwork, uint32_t ms)
     {
         auto now       = std::chrono::steady_clock::now();
         dwork->expire  = now + std::chrono::milliseconds(ms);
@@ -121,17 +121,17 @@ public:
     }
 };
 
-struct DelayAwaiter : delayed_worknode {
+struct DelayAwaiter : Delayed_worknode {
 
-    explicit DelayAwaiter(timer_check_queue& delay_queue, uint32_t ms) : _delay_queue(delay_queue) { wait_ms = ms; }
+    explicit DelayAwaiter(Timer_check_queue& delay_queue, uint32_t ms) : _delay_queue(delay_queue) { wait_ms = ms; }
 
     std::coroutine_handle<> mCoroutine;
     uint32_t                wait_ms;
-    timer_check_queue&      _delay_queue;
+    Timer_check_queue&      _delay_queue;
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<work_Promise<void>> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<Work_Promise<void>> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);
@@ -151,7 +151,7 @@ struct DelayAwaiter : delayed_worknode {
     }
 };
 
-inline Task<void, work_Promise<void>> delay_ms(struct timer_check_queue& dly_wkq, uint32_t ms)
+inline Task<void, Work_Promise<void>> delay_ms(struct Timer_check_queue& dly_wkq, uint32_t ms)
 {
     co_return co_await DelayAwaiter(dly_wkq, ms);
 }

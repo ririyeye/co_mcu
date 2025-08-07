@@ -7,10 +7,10 @@
 
 namespace co_mcu {
 
-struct sem_req : worknode {
-    sem_req() { INIT_LIST_HEAD(&ws_node); }
+struct Sem_req : worknode {
+    Sem_req() { INIT_LIST_HEAD(&ws_node); }
 
-    ~sem_req()
+    ~Sem_req()
     {
         uint32_t lk = lock_acquire();
         list_del(&ws_node);
@@ -24,7 +24,7 @@ struct sem_req : worknode {
     } req_sta;
 };
 
-struct semaphore : worknode {
+struct Semaphore : worknode {
 private:
     workqueue& _executor;
     int        _cur_val;
@@ -43,13 +43,13 @@ private:
 
         uint32_t lk = lock_acquire();
         list_for_each_entry_safe (pos, n, &acquire_list, ws_node, worknode) {
-            sem_req* req = static_cast<sem_req*>(pos);
+            Sem_req* req = static_cast<Sem_req*>(pos);
 
             if (_cur_val > 0) {
                 _cur_val--;
                 list_del(&req->ws_node);
                 workqueue_add_new_nolock(&_executor, req);
-                req->req_sta = sem_req::REQ_OK;
+                req->req_sta = Sem_req::REQ_OK;
                 trig_flg     = 1;
             }
         }
@@ -61,18 +61,18 @@ private:
     }
 
 public:
-    explicit semaphore(workqueue& executor, int init_val, int max_val)
+    explicit Semaphore(workqueue& executor, int init_val, int max_val)
         : _executor(executor), _cur_val(init_val), _max_val(max_val)
     {
         INIT_LIST_HEAD(&ws_node);
         INIT_LIST_HEAD(&acquire_list);
         func = [](struct worknode* work) {
-            semaphore* tcq = static_cast<semaphore*>(work);
+            Semaphore* tcq = static_cast<Semaphore*>(work);
             tcq->sem_chk_cb();
         };
     }
 
-    void acquire(sem_req& sem_req)
+    void acquire(Sem_req& sem_req)
     {
         uint32_t lk = lock_acquire();
         if (_cur_val > 0) {
@@ -103,12 +103,12 @@ public:
     }
 };
 
-struct SemReqAwaiter : sem_req {
+struct SemReqAwaiter : Sem_req {
 
-    explicit SemReqAwaiter(semaphore& sem) : _semaphore(sem) { }
+    explicit SemReqAwaiter(Semaphore& sem) : _semaphore(sem) { }
 
     std::coroutine_handle<> mCoroutine;
-    semaphore&              _semaphore;
+    Semaphore&              _semaphore;
 
     bool await_ready() const noexcept { return false; }
 
@@ -129,7 +129,7 @@ struct SemReqAwaiter : sem_req {
     void await_resume() const noexcept { }
 };
 
-inline Task<void, work_Promise<void>> wait_sem(semaphore& sem)
+inline Task<void, Work_Promise<void>> wait_sem(Semaphore& sem)
 {
     co_return co_await SemReqAwaiter(sem);
 }

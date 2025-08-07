@@ -5,11 +5,11 @@
 #pragma once
 namespace co_mcu {
 
-template <class T> struct work_Promise : Promise<T>, worknode {
+template <class T> struct Work_Promise : Promise<T>, worknode {
 
-    auto get_return_object() { return std::coroutine_handle<work_Promise>::from_promise(*this); }
+    auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
 
-    virtual ~work_Promise() = default;
+    virtual ~Work_Promise() = default;
 
     struct workqueue* _excutor = nullptr;
 
@@ -24,8 +24,8 @@ template <class T> struct work_Promise : Promise<T>, worknode {
 
     static void wk_cb(struct worknode* work)
     {
-        work_Promise* promise = static_cast<work_Promise*>(work);
-        auto          coro    = std::coroutine_handle<work_Promise>::from_promise(*promise);
+        Work_Promise* promise = static_cast<Work_Promise*>(work);
+        auto          coro    = std::coroutine_handle<Work_Promise>::from_promise(*promise);
 
         int doneflg = 0;
 
@@ -65,13 +65,13 @@ template <class T> struct work_Promise : Promise<T>, worknode {
         return std::suspend_always();
     }
 
-    work_Promise& operator=(work_Promise&&) = delete;
+    Work_Promise& operator=(Work_Promise&&) = delete;
 };
 
-template <> struct work_Promise<void> : Promise<void>, worknode {
-    auto get_return_object() { return std::coroutine_handle<work_Promise>::from_promise(*this); }
+template <> struct Work_Promise<void> : Promise<void>, worknode {
+    auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
 
-    virtual ~work_Promise() = default;
+    virtual ~Work_Promise() = default;
 
     struct workqueue* _excutor = nullptr;
 
@@ -86,8 +86,8 @@ template <> struct work_Promise<void> : Promise<void>, worknode {
 
     static void wk_cb(struct worknode* work)
     {
-        work_Promise* promise = static_cast<work_Promise*>(work);
-        auto          coro    = std::coroutine_handle<work_Promise>::from_promise(*promise);
+        Work_Promise* promise = static_cast<Work_Promise*>(work);
+        auto          coro    = std::coroutine_handle<Work_Promise>::from_promise(*promise);
 
         int doneflg = 0;
 
@@ -119,10 +119,10 @@ template <> struct work_Promise<void> : Promise<void>, worknode {
         return std::suspend_always();
     }
 
-    work_Promise& operator=(work_Promise&&) = delete;
+    Work_Promise& operator=(Work_Promise&&) = delete;
 };
 
-template <class T> static inline void post_to(Task<T, work_Promise<T>>& tk, workqueue& executor)
+template <class T> static inline void post_to(Task<T, Work_Promise<T>>& tk, workqueue& executor)
 {
     auto& promise = tk.mCoroutine.promise();
     INIT_LIST_HEAD(&promise.ws_node);
