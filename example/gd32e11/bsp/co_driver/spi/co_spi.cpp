@@ -31,8 +31,9 @@ struct spi_hard_info {
 struct spi_handle : worknode {
     explicit spi_handle(const struct spi_hard_info& info) : mInfo(info), sem(get_sys_workqueue(), 1, 1) { }
 
-    uint32_t is_init : 1;
-    uint8_t  dummy_tx[4]; // 4 bytes for 32-bit dummy tx
+    uint32_t     is_init : 1;
+    spi_mode_bit cur_mode;
+    uint8_t      dummy_tx[4]; // 4 bytes for 32-bit dummy tx
 
     const struct spi_hard_info& mInfo;
 
@@ -302,7 +303,15 @@ SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len,
     co_return node.len;
 }
 
-co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init()
+void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte)
+{
+    phandle->dummy_tx[0] = dummy_byte;
+    phandle->dummy_tx[1] = dummy_byte;
+    phandle->dummy_tx[2] = dummy_byte;
+    phandle->dummy_tx[3] = dummy_byte;
+}
+
+co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init(spi_mode_bit mode)
 {
     if (handle_) {
         co_return true; // 已经初始化
@@ -316,6 +325,11 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init()
     co_await co_mcu::SemReqAwaiter(tmp_handle->sem);
 
     handle_ = tmp_handle;
+    if (mode != handle_->cur_mode) {
+        spi_master_config(&handle_->mInfo, mode);
+    }
+
+    spi_ext_set_sp_dummy_byte(handle_, 0xff);
 
     co_return true;
 }
