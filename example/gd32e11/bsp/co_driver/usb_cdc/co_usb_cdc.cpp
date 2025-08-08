@@ -16,8 +16,6 @@ typedef enum {
 } cdc_ret;
 
 struct cdc_usr_node : worknode {
-    struct cdc_usr* puser;
-
     uint8_t* data;
     uint16_t dat_max; // 总长度
     uint16_t dat_cur; // 正在处理的位置
@@ -55,7 +53,7 @@ void            cdc_usr_init(void)
     usb_intr_config();
 }
 
-static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* phead, int txflg, struct cdc_usr* pcdc)
+static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* phead, int txflg)
 {
     // 没有可以接收的 数据节点
     if (list_empty(phead)) {
@@ -128,7 +126,7 @@ extern "C" void cdc_usr_recv_cpl(usb_dev* udev, int len, uint8_t* addr)
     struct cdc_usr* pcdc = get_cdc();
 
     uint32_t lk  = lock_acquire();
-    int      ret = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_rx, 0, pcdc);
+    int      ret = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_rx, 0);
     if (ret < 0) {
         lock_release(lk);
         return;
@@ -145,7 +143,7 @@ extern "C" void cdc_usr_send_cpl(usb_dev* udev, int len, uint8_t* addr)
 
     struct cdc_usr* pcdc = get_cdc();
     uint32_t        lk   = lock_acquire();
-    int             ret  = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_tx, 1, pcdc);
+    int             ret  = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_tx, 1);
     if (ret < 0) {
         lock_release(lk);
         return;
@@ -238,7 +236,6 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>> UsbCDCManager::transfer(uint8_t* da
     };
 
     cdc_usr_node_cb node;
-    node.puser   = handle_;
     node.data    = const_cast<uint8_t*>(data);
     node.dat_max = len;
     node.dat_cur = 0;
