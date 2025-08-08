@@ -74,6 +74,10 @@ target("gd32e11_bsp")
         -- , {public=true}
     )
 
+    -- com
+    add_includedirs(
+        "co_driver", {public=true}
+    )
 
     -- uart
     add_files(
@@ -83,6 +87,16 @@ target("gd32e11_bsp")
 
     add_includedirs(
         "co_driver/uart", {public=true}
+    )
+
+    -- spi
+    add_files(
+        "co_driver/spi/co_spi.cpp"
+        -- , {optimize = "none"}
+    )
+
+    add_includedirs(
+        "co_driver/spi", {public=true}
     )
 
     -- usb

@@ -15,8 +15,6 @@ struct uart_session : worknode {
     uint32_t        len;
     uint32_t        cur_len; // 当前已传输长度
     struct UART_FLG flg;
-
-    struct uart_handle* puart_handle;
 };
 
 struct uart_handle : worknode {
@@ -272,7 +270,6 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t*
     };
 
     tx_uart_session node;
-    node.puart_handle  = handle_;
     node.buff          = const_cast<uint8_t*>(data);
     node.len           = len;
     node.cur_len       = 0;
