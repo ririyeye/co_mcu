@@ -31,8 +31,8 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
 
 co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_task()
 {
-    auto hd   = UsbCDCManager();
-    bool succ = co_await hd.init();
+    auto cdc  = UsbCDCManager();
+    bool succ = co_await cdc.init();
 
     if (!succ) {
         co_return;
@@ -40,7 +40,40 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_task()
 
     while (1) {
         const char hello[] = "hello world\r\n";
-        co_await hd.transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
+        co_await cdc.transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
+        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+    }
+
+    co_return;
+}
+
+co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
+{
+    while (1) {
+        co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
+    }
+
+    co_return;
+}
+
+#define BLK_CNT 8
+char usb_buff[BLK_CNT][64];
+
+co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_task()
+{
+    auto cdc  = UsbCDCManager();
+    bool succ = co_await cdc.init();
+
+    if (!succ) {
+        co_return;
+    }
+
+    for (int i = 0; i < BLK_CNT; i++) {
+        auto u1 = usb_recv_block_task(cdc, usb_buff[i], sizeof(usb_buff[i]));
+        post_to(u1, get_sys_workqueue());
+    }
+
+    while (1) {
         co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
     }
 
@@ -52,7 +85,7 @@ void usr_init(void)
     auto t = test_task();
     post_to(t, get_sys_workqueue());
 
-    auto usb = usb_task();
+    auto usb = usb_recv_task();
     post_to(usb, get_sys_workqueue());
 }
 
