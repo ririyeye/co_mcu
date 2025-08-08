@@ -177,32 +177,38 @@ void cdc_usr_async_setup_nolock(struct list_head* plist,
                                 usb_dev*          udev,
                                 int               txflg)
 {
-    int setupflg = 0;
+    int instance_trx = 0;
     if (list_empty(plist)) {
         if (usb_ready_flg) {
-            if (txflg) {
-                setupflg = 1;
-                usbd_ep_send(udev,
-                             CDC_DATA_IN_EP,
-                             (uint8_t*)pnod->data,
-                             pnod->dat_max < USB_CDC_DATA_PACKET_SIZE ? pnod->dat_max : USB_CDC_DATA_PACKET_SIZE);
-            } else {
-                setupflg = 1;
-                usbd_ep_recev(udev,
-                              CDC_DATA_OUT_EP,
-                              (uint8_t*)pnod->data,
-                              pnod->dat_max < USB_CDC_DATA_PACKET_SIZE ? pnod->dat_max : USB_CDC_DATA_PACKET_SIZE);
-            }
+            instance_trx = 1;
         }
     }
 
-    if (setupflg) {
-        list_add_tail(&pnod->ws_node, plist);
+    list_add_tail(&pnod->ws_node, plist);
+
+    if (instance_trx) {
+        if (txflg) {
+            usbd_ep_send(udev,
+                         CDC_DATA_IN_EP,
+                         (uint8_t*)pnod->data,
+                         pnod->dat_max < USB_CDC_DATA_PACKET_SIZE ? pnod->dat_max : USB_CDC_DATA_PACKET_SIZE);
+        } else {
+            usbd_ep_recev(udev,
+                          CDC_DATA_OUT_EP,
+                          (uint8_t*)pnod->data,
+                          pnod->dat_max < USB_CDC_DATA_PACKET_SIZE ? pnod->dat_max : USB_CDC_DATA_PACKET_SIZE);
+        }
     }
 }
 
 struct cdc_usr* get_cdc(void)
 {
+    return &cdc_data;
+}
+
+struct cdc_usr* get_cdc_init(void)
+{
+    cdc_usr_init();
     return &cdc_data;
 }
 
@@ -212,12 +218,12 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UsbCDCManager::init()
         co_return true; // 已经初始化
     }
 
-    auto tmp_handle = get_cdc();
+    auto tmp_handle = get_cdc_init();
     if (!tmp_handle) {
         co_return false; // 获取句柄失败
     }
 
-    co_await co_mcu::SemReqAwaiter(handle_->sem);
+    co_await co_mcu::SemReqAwaiter(tmp_handle->sem);
 
     handle_ = tmp_handle;
 
