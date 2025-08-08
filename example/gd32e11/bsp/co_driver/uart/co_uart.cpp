@@ -24,7 +24,7 @@ struct uart_handle : worknode {
 
     uint32_t is_init : 1;
 
-    int baud_rate = 115200;
+    int baud_rate = 1152000;
 
     const struct uart_hard_info* mInfo;
 
@@ -179,7 +179,6 @@ static int _uart_irq_handle(struct uart_handle* phandle)
         uart_session* pnod  = static_cast<uart_session*>(pbase);
         usart_data_transmit(phard->uart_periph, pnod->buff[pnod->cur_len++]);
         if (pnod->cur_len >= pnod->len) {
-            list_del(&pnod->ws_node);
             workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
             retcnt++;
             if (list_empty(&phandle->list_work_tx)) {
@@ -268,7 +267,7 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
 co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
-        explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { }
+        explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { INIT_LIST_HEAD(&ws_node); }
         co_mcu::Semaphore cpl_inotify;
     };
 
@@ -302,7 +301,7 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UartManager::init()
         co_return false; // 获取句柄失败
     }
 
-    co_await co_mcu::SemReqAwaiter(uart_handle_get(handle_));
+    co_await co_mcu::SemReqAwaiter(uart_handle_get(tmp_handle));
 
     handle_ = tmp_handle;
 

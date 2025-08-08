@@ -106,7 +106,6 @@ public:
             _cur_val++;
             if (!list_empty(&acquire_list)) {
                 post_flg = 1;
-                sem_chk_cb(); // wake up one waiting request
             }
         }
         lock_release(lk);
@@ -119,7 +118,9 @@ public:
 
 struct SemReqAwaiter : Sem_req {
 
-    explicit SemReqAwaiter(Semaphore& sem) : mSemaphore(sem) { INIT_LIST_HEAD(&ws_node); }
+    explicit SemReqAwaiter(Semaphore& sem) : mSemaphore(sem) { 
+        INIT_LIST_HEAD(&ws_node);
+    }
 
     std::coroutine_handle<> mCoroutine;
     Semaphore&              mSemaphore;
