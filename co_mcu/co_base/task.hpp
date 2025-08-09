@@ -11,7 +11,8 @@ namespace co_mcu {
 #include <exception>
 #endif
 
-template <class T> struct Promise {
+struct Promise_base {
+
     auto initial_suspend() noexcept { return std::suspend_always(); }
 
     auto final_suspend() noexcept { return PreviousAwaiter(mPrevious); }
@@ -22,6 +23,13 @@ template <class T> struct Promise {
         mException = std::current_exception();
 #endif
     }
+    std::coroutine_handle<> mPrevious;
+#if USE_EXCEPTION
+    std::exception_ptr mException {};
+#endif
+};
+
+template <class T> struct Promise : Promise_base {
 
     void return_value(T&& ret) { mResult.emplace(std::move(ret)); }
 
@@ -39,27 +47,12 @@ template <class T> struct Promise {
 
     auto get_return_object() { return std::coroutine_handle<Promise>::from_promise(*this); }
 
-    std::coroutine_handle<> mPrevious;
-#if USE_EXCEPTION
-    std::exception_ptr mException {};
-#endif
     Uninitialized<T> mResult; // destructed??
 
     Promise& operator=(Promise&&) = delete;
 };
 
-template <> struct Promise<void> {
-    auto initial_suspend() noexcept { return std::suspend_always(); }
-
-    auto final_suspend() noexcept { return PreviousAwaiter(mPrevious); }
-
-    void unhandled_exception() noexcept
-    {
-#if USE_EXCEPTION
-        mException = std::current_exception();
-#endif
-    }
-
+template <> struct Promise<void> : Promise_base {
     void return_void() noexcept { }
 
     void result()
@@ -73,10 +66,6 @@ template <> struct Promise<void> {
 
     auto get_return_object() { return std::coroutine_handle<Promise>::from_promise(*this); }
 
-    std::coroutine_handle<> mPrevious;
-#if USE_EXCEPTION
-    std::exception_ptr mException {};
-#endif
     Promise& operator=(Promise&&) = delete;
 };
 
