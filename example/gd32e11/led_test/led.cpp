@@ -13,7 +13,7 @@ void usr_tick()
     get_sys_timer().tick_update();
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> u_send(UartManager& uart, char* buff, int len)
+co_mcu::Task<void, co_mcu::Work_Promise<void>> u_send(UartManager& uart, void* buff, int len)
 {
     co_await uart.uart_transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
 
@@ -31,8 +31,8 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
         co_return;
     }
 
-    auto u1 = u_send(uart, "test", 4);
-    auto u2 = u_send(uart, "pppp", 4);
+    auto u1 = u_send(uart, (void*)"test", 4);
+    auto u2 = u_send(uart, (void*)"pppp", 4);
 
     co_await when_all(u1, u2);
 

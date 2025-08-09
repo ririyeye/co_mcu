@@ -1,14 +1,14 @@
 #include "syswork.hpp"
-
+#include <atomic>
 struct executor_wq : workqueue {
-    std::atomic_int trig_flg = 0;
+    std::atomic_int trig_cnt = 0;
 
     explicit executor_wq()
     {
         INIT_LIST_HEAD(&ws_head);
         trig = [](struct workqueue* wq) {
             executor_wq* ewq = static_cast<executor_wq*>(wq);
-            ewq->trig_flg    = 1;
+            ewq->trig_cnt++;
         };
     }
 };

@@ -1,15 +1,11 @@
 #include "co_base/task.hpp"
 #include "workqueue.h"
-#include <atomic>
 
 #pragma once
 namespace co_mcu {
 
-template <class T = void> struct Work_Promise : Promise<T>, worknode {
-
-    auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
-
-    virtual ~Work_Promise() = default;
+template <class T = void> struct Base_Work_Promise : Promise<T>, worknode {
+    virtual ~Base_Work_Promise() = default;
 
     struct workqueue* _excutor = nullptr;
 
@@ -22,104 +18,45 @@ template <class T = void> struct Work_Promise : Promise<T>, worknode {
         }
     }
 
+    void post(void) { post(this->_excutor); }
+
     static void wk_cb(struct worknode* work)
     {
-        Work_Promise* promise = static_cast<Work_Promise*>(work);
-        auto          coro    = std::coroutine_handle<Work_Promise>::from_promise(*promise);
-
-        int doneflg = 0;
+        auto* promise = static_cast<Base_Work_Promise*>(work);
+        auto  coro    = std::coroutine_handle<Base_Work_Promise>::from_promise(*promise);
 
         if (!coro.done()) {
             coro.resume();
-            if (coro.done()) {
-                doneflg = 1;
-            }
-        } else {
-            doneflg = 1;
         }
 
-        if (doneflg) {
-            // 协程已完成 销毁
+        if (coro.done()) {
             coro.destroy();
         }
     }
 
+    Base_Work_Promise& operator=(Base_Work_Promise&&) = delete;
+};
+
+template <class T = void> struct Work_Promise : Base_Work_Promise<T> {
+    auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
+
     void return_value(T&& ret)
     {
-        func = wk_cb;
-        workqueue_post(_excutor, this);
+        Base_Work_Promise<T>::post();
         Promise<T>::return_value(std::move(ret));
     }
 
     void return_value(T const& ret)
     {
-        func = wk_cb;
-        workqueue_post(_excutor, this);
-        Promise<T>::return_value(std::move(ret));
+        Base_Work_Promise<T>::post();
+        Promise<T>::return_value(ret);
     }
-
-    auto yield_value(int)
-    {
-        func = wk_cb;
-        workqueue_post(_excutor, this);
-        return std::suspend_always();
-    }
-
-    Work_Promise& operator=(Work_Promise&&) = delete;
 };
 
-template <> struct Work_Promise<void> : Promise<void>, worknode {
+template <> struct Work_Promise<void> : Base_Work_Promise<void> {
     auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
 
-    virtual ~Work_Promise() = default;
-
-    struct workqueue* _excutor = nullptr;
-
-    void post(workqueue* wq)
-    {
-        _excutor = wq;
-        func     = wk_cb;
-        if (wq) {
-            workqueue_post(wq, this);
-        }
-    }
-
-    static void wk_cb(struct worknode* work)
-    {
-        Work_Promise* promise = static_cast<Work_Promise*>(work);
-        auto          coro    = std::coroutine_handle<Work_Promise>::from_promise(*promise);
-
-        int doneflg = 0;
-
-        if (!coro.done()) {
-            coro.resume();
-            if (coro.done()) {
-                doneflg = 1;
-            }
-        } else {
-            doneflg = 1;
-        }
-
-        if (doneflg) {
-            // 协程已完成 销毁
-            coro.destroy();
-        }
-    }
-
-    void return_void() noexcept
-    {
-        func = wk_cb;
-        workqueue_post(_excutor, this);
-    }
-
-    auto yield_value(int)
-    {
-        func = wk_cb;
-        workqueue_post(_excutor, this);
-        return std::suspend_always();
-    }
-
-    Work_Promise& operator=(Work_Promise&&) = delete;
+    void return_void() noexcept { Base_Work_Promise<>::post(); }
 };
 
 template <class T> static inline void post_to(Task<T, Work_Promise<T>>& tk, workqueue& executor)

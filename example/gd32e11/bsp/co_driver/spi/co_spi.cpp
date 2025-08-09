@@ -29,7 +29,11 @@ struct spi_hard_info {
 };
 
 struct spi_handle : worknode {
-    explicit spi_handle(const struct spi_hard_info& info) : mInfo(info), sem(get_sys_workqueue(), 1, 1) { }
+    explicit spi_handle(const struct spi_hard_info& info, struct workqueue& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1)
+    {
+    }
+
+    struct workqueue& wq_;
 
     uint32_t     is_init : 1;
     spi_mode_bit cur_mode;
@@ -73,7 +77,7 @@ static const struct spi_hard_info spi_info_0 = {
     SPI0
 };
 
-struct spi_handle  spi_ext_0(spi_info_0);
+struct spi_handle  spi_ext_0(spi_info_0, get_sys_workqueue());
 struct spi_handle* spi_handle_get()
 {
     return &spi_ext_0;
@@ -209,7 +213,7 @@ static void spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
     worknode*    pbase = list_first_entry(&handle->list_work, worknode, ws_node);
     spi_session* pnod  = static_cast<spi_session*>(pbase);
 
-    workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+    workqueue_add_new_nolock(&handle->wq_, pnod);
 
     const struct spi_hard_info& pinfo = handle->mInfo;
 
@@ -281,11 +285,11 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>>
 SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, spi_ctrl_bit ctrl_bit)
 {
     struct co_spi_session : spi_session {
-        explicit co_spi_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { INIT_LIST_HEAD(&ws_node); }
+        explicit co_spi_session(workqueue& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
         co_mcu::Semaphore cpl_inotify;
     };
 
-    co_spi_session node;
+    co_spi_session node(handle_->wq_);
     node.tx_buf   = tx_buff;
     node.rx_buf   = rx_buff;
     node.len      = len;

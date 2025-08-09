@@ -18,7 +18,9 @@ struct uart_session : worknode {
 };
 
 struct uart_handle : worknode {
-    explicit uart_handle(const struct uart_hard_info* info) : mInfo(info), sem(get_sys_workqueue(), 1, 1) { }
+    explicit uart_handle(const struct uart_hard_info* info, workqueue& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1) { }
+
+    struct workqueue& wq_;
 
     uint32_t is_init : 1;
 
@@ -56,7 +58,7 @@ static const struct uart_hard_info hard_u0 = {
     .uart_pin_cfg = uart0_pin_cfg,
 };
 
-struct uart_handle uart_0(&hard_u0);
+struct uart_handle uart_0(&hard_u0, get_sys_workqueue());
 
 static void uart_hard_init(const struct uart_hard_info* phard, int baud_rate)
 {
@@ -120,7 +122,7 @@ static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod
 
 static int uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
 {
-    workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+    workqueue_add_new_nolock(&phandle->wq_, pnod);
 
     if (!list_empty(&phandle->list_work_rx)) {
 
@@ -177,7 +179,7 @@ static int _uart_irq_handle(struct uart_handle* phandle)
         uart_session* pnod  = static_cast<uart_session*>(pbase);
         usart_data_transmit(phard->uart_periph, pnod->buff[pnod->cur_len++]);
         if (pnod->cur_len >= pnod->len) {
-            workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+            workqueue_add_new_nolock(&phandle->wq_, pnod);
             retcnt++;
             if (list_empty(&phandle->list_work_tx)) {
                 usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
@@ -195,7 +197,7 @@ static void uart_irq_handle(struct uart_handle* phandle)
     lock_release(lk);
 
     if (evt) {
-        workqueue_trig_once(&get_sys_workqueue());
+        workqueue_trig_once(&phandle->wq_);
     }
 }
 
@@ -265,11 +267,11 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
 co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
-        explicit tx_uart_session() : cpl_inotify(get_sys_workqueue(), 0, 1) { INIT_LIST_HEAD(&ws_node); }
+        explicit tx_uart_session(workqueue& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
         co_mcu::Semaphore cpl_inotify;
     };
 
-    tx_uart_session node;
+    tx_uart_session node(handle_->wq_);
     node.buff          = const_cast<uint8_t*>(data);
     node.len           = len;
     node.cur_len       = 0;

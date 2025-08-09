@@ -22,11 +22,13 @@ struct cdc_usr_node : worknode {
 };
 
 struct cdc_usr : worknode {
-    explicit cdc_usr() : sem(get_sys_workqueue(), 1, 1)
+    explicit cdc_usr(workqueue& wq) : wq_(wq), sem(wq_, 1, 1)
     {
         is_init       = 0;
         usb_ready_flg = 0;
     }
+    struct workqueue& wq_;
+
     usb_dev* udev = nullptr;
 
     uint32_t is_init       : 1;
@@ -38,7 +40,7 @@ struct cdc_usr : worknode {
     co_mcu::Semaphore sem;
 };
 
-cdc_usr         cdc_data;
+cdc_usr         cdc_data(get_sys_workqueue());
 struct cdc_usr* get_cdc(void);
 void            cdc_usr_init(void)
 {
@@ -53,7 +55,7 @@ void            cdc_usr_init(void)
     usb_intr_config();
 }
 
-static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* phead, int txflg)
+static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* phead, int txflg, struct cdc_usr* pcdc)
 {
     // 没有可以接收的 数据节点
     if (list_empty(phead)) {
@@ -74,13 +76,13 @@ static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* p
     if (txflg) {
         if (pnod->dat_cur >= pnod->dat_max) {
             list_del(&pnod->ws_node);
-            workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+            workqueue_add_new_nolock(&pcdc->wq_, pnod);
             return cdc_ret_pkt_cpl;
         }
         return cdc_ret_continue;
     } else {
         list_del(&pnod->ws_node);
-        workqueue_add_new_nolock(&get_sys_workqueue(), pnod);
+        workqueue_add_new_nolock(&pcdc->wq_, pnod);
         return cdc_ret_pkt_cpl;
     }
 }
@@ -126,7 +128,7 @@ extern "C" void cdc_usr_recv_cpl(usb_dev* udev, int len, uint8_t* addr)
     struct cdc_usr* pcdc = get_cdc();
 
     uint32_t lk  = lock_acquire();
-    int      ret = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_rx, 0);
+    int      ret = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_rx, 0, pcdc);
     if (ret < 0) {
         lock_release(lk);
         return;
@@ -135,7 +137,7 @@ extern "C" void cdc_usr_recv_cpl(usb_dev* udev, int len, uint8_t* addr)
     lock_release(lk);
 
     if (ret == cdc_ret_pkt_cpl) {
-        workqueue_trig_once(&get_sys_workqueue());
+        workqueue_trig_once(&pcdc->wq_);
     }
 }
 extern "C" void cdc_usr_send_cpl(usb_dev* udev, int len, uint8_t* addr)
@@ -143,7 +145,7 @@ extern "C" void cdc_usr_send_cpl(usb_dev* udev, int len, uint8_t* addr)
 
     struct cdc_usr* pcdc = get_cdc();
     uint32_t        lk   = lock_acquire();
-    int             ret  = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_tx, 1);
+    int             ret  = cdc_usr_cpl_cb_nolock(len, addr, &pcdc->list_work_tx, 1, pcdc);
     if (ret < 0) {
         lock_release(lk);
         return;
@@ -152,7 +154,7 @@ extern "C" void cdc_usr_send_cpl(usb_dev* udev, int len, uint8_t* addr)
     lock_release(lk);
 
     if (ret == cdc_ret_pkt_cpl) {
-        workqueue_trig_once(&get_sys_workqueue());
+        workqueue_trig_once(&pcdc->wq_);
     }
 }
 
@@ -231,11 +233,11 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UsbCDCManager::init()
 co_mcu::Task<int, co_mcu::Work_Promise<int>> UsbCDCManager::transfer(uint8_t* data, size_t len, int tx)
 {
     struct cdc_usr_node_cb : cdc_usr_node {
-        explicit cdc_usr_node_cb() : cpl_inotify(get_sys_workqueue(), 0, 1) { }
+        explicit cdc_usr_node_cb(workqueue& wq) : cpl_inotify(wq, 0, 1) { }
         co_mcu::Semaphore cpl_inotify;
     };
 
-    cdc_usr_node_cb node;
+    cdc_usr_node_cb node(handle_->wq_);
     node.data    = const_cast<uint8_t*>(data);
     node.dat_max = len;
     node.dat_cur = 0;
