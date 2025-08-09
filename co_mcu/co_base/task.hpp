@@ -7,7 +7,6 @@
 
 namespace co_mcu {
 
-#define USE_EXCEPTION 0
 #if USE_EXCEPTION
 #include <exception>
 #endif
@@ -23,9 +22,9 @@ template <class T> struct Promise {
 #endif
   }
 
-  void return_value(T &&ret) { mResult.putValue(std::move(ret)); }
+  void return_value(T &&ret) { mResult.emplace(std::move(ret)); }
 
-  void return_value(T const &ret) { mResult.putValue(ret); }
+  void return_value(T const &ret) { mResult.emplace(ret); }
 
   T result() {
 #if USE_EXCEPTION
@@ -33,7 +32,7 @@ template <class T> struct Promise {
       std::rethrow_exception(mException);
     }
 #endif
-    return mResult.moveValue();
+    return mResult.move();
   }
 
   auto get_return_object() {
@@ -100,7 +99,17 @@ template <class T = void, class P = Promise<T>> struct [[nodiscard]] Task {
       mCoroutine.destroy();
   }
 
-  void detach() noexcept { mCoroutine = nullptr; }
+  std::coroutine_handle<promise_type> detach() noexcept {
+    return std::exchange(mCoroutine, nullptr);
+  }
+
+  std::coroutine_handle<promise_type> get() const noexcept {
+      return mCoroutine;
+  }
+
+  std::coroutine_handle<promise_type> release() noexcept {
+      return std::exchange(mCoroutine, nullptr);
+  }
 
   struct Awaiter {
     bool await_ready() const noexcept { return false; }

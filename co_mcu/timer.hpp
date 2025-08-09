@@ -131,7 +131,7 @@ struct DelayAwaiter : Delayed_worknode {
 
     bool await_ready() const noexcept { return false; }
 
-    void await_suspend(std::coroutine_handle<Work_Promise<void>> coroutine) noexcept
+    void await_suspend(std::coroutine_handle<> coroutine) noexcept
     {
         mCoroutine = coroutine;
         INIT_LIST_HEAD(&ws_node);

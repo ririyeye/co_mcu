@@ -26,6 +26,8 @@ toolchain("m4-arm-none-eabi")
         "-fno-rtti -fno-exceptions -fno-threadsafe-statics"
     )
 
+    add_defines("USE_EXCEPTION=0")
+
     add_asflags(
         mcu,
         "-x assembler-with-cpp",

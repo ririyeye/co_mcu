@@ -5,7 +5,7 @@
 #pragma once
 namespace co_mcu {
 
-template <class T> struct Work_Promise : Promise<T>, worknode {
+template <class T = void> struct Work_Promise : Promise<T>, worknode {
 
     auto get_return_object() { return std::coroutine_handle<Work_Promise>::from_promise(*this); }
 

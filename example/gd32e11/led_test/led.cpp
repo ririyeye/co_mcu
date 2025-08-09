@@ -6,25 +6,35 @@ extern "C" {
 #include "systick.h"
 #include "syswork.hpp"
 #include "timer.hpp"
+#include "when_all.hpp"
+
 void usr_tick()
 {
     get_sys_timer().tick_update();
 }
 
+co_mcu::Task<void, co_mcu::Work_Promise<void>> u_send(UartManager& uart, char* buff, int len)
+{
+    co_await uart.uart_transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
+
+    co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+
+    co_return;
+}
+
 co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
 {
-    auto hd   = UartManager(0);
-    bool succ = co_await hd.init();
+    auto uart = UartManager(0);
+    bool succ = co_await uart.init();
 
     if (!succ) {
         co_return;
     }
 
-    while (1) {
-        const char hello[] = "hello world\r\n";
-        co_await hd.uart_transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
-        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
-    }
+    auto u1 = u_send(uart, "test", 4);
+    auto u2 = u_send(uart, "pppp", 4);
+
+    co_await when_all(u1, u2);
 
     co_return;
 }
