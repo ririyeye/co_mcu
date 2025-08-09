@@ -12,7 +12,7 @@ struct spi_session : worknode {
     const uint8_t* tx_buf;
     const uint8_t* rx_buf;
     uint32_t       len;
-    spi_ctrl_bit   ctrl_bit;
+    uint32_t       ctrl_bit;
 };
 
 struct spi_hard_info {
@@ -203,11 +203,11 @@ static void spi_setup_transfer(struct spi_handle* phandle, struct spi_session* p
     spi_dma_enable(pinfo->spi_periph, SPI_DMA_RECEIVE);
 }
 
-static void spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
+static int spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
 {
     (void)is_tx;
     if (list_empty(&handle->list_work)) {
-        return;
+        return 0;
     }
 
     worknode*    pbase = list_first_entry(&handle->list_work, worknode, ws_node);
@@ -232,6 +232,8 @@ static void spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
     } else {
         spi_disable(pinfo.spi_periph);
     }
+
+    return 1;
 }
 
 static void spi_dma_cpl_cb(struct spi_handle* handle, int is_tx)
@@ -245,9 +247,13 @@ static void spi_dma_cpl_cb(struct spi_handle* handle, int is_tx)
     } else {
         return;
     }
-    uint32_t lk = lock_acquire();
-    spi_dma_cpl_cb_critical(handle, is_tx);
+    uint32_t lk  = lock_acquire();
+    int      ret = spi_dma_cpl_cb_critical(handle, is_tx);
     lock_release(lk);
+
+    if (ret) {
+        workqueue_trig_once(&handle->wq_);
+    }
 }
 
 extern "C" void DMA0_Channel1_IRQHandler(void)
@@ -282,7 +288,7 @@ static void spi_transfer_setup(struct spi_handle& phandle, spi_session& psess)
 }
 
 co_mcu::Task<int, co_mcu::Work_Promise<int>>
-SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, spi_ctrl_bit ctrl_bit)
+SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
 {
     struct co_spi_session : spi_session {
         explicit co_spi_session(workqueue& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
@@ -315,7 +321,7 @@ void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte)
     phandle->dummy_tx[3] = dummy_byte;
 }
 
-co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init(spi_mode_bit mode)
+co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init(uint32_t mode)
 {
     if (handle_) {
         co_return true; // 已经初始化

@@ -29,9 +29,9 @@ struct SpiManager {
 public:
     SpiManager() : handle_(nullptr) { }
     ~SpiManager();
-    co_mcu::Task<bool, co_mcu::Work_Promise<bool>> init(spi_mode_bit mode);
+    co_mcu::Task<bool, co_mcu::Work_Promise<bool>> init(uint32_t mode);
     co_mcu::Task<int, co_mcu::Work_Promise<int>>
-    transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, spi_ctrl_bit ctrl_bit);
+    transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit);
 
 private:
     spi_handle* handle_;

@@ -1,6 +1,7 @@
 extern "C" {
 #include "gd32e11x_misc.h"
 }
+#include "co_spi.hpp"
 #include "co_uart.hpp"
 #include "co_usb_cdc.hpp"
 #include "systick.h"
@@ -90,6 +91,26 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_task()
     co_return;
 }
 
+co_mcu::Task<void, co_mcu::Work_Promise<void>> spi_task()
+{
+    auto spi  = SpiManager();
+    bool succ = co_await spi.init(spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1);
+
+    if (!succ) {
+        co_return;
+    }
+
+    while (1) {
+        char testpp[] = "123456";
+        co_await spi.transfer((uint8_t*)testpp, nullptr, 6, 0);
+
+        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+    }
+
+    co_return;
+}
+
+
 void usr_init(void)
 {
     auto t = test_task();
@@ -97,6 +118,9 @@ void usr_init(void)
 
     auto usb = usb_recv_task();
     post_to(usb, get_sys_workqueue());
+
+    auto spi = spi_task();
+    post_to(spi, get_sys_workqueue());
 }
 
 void usr_loop(void)
