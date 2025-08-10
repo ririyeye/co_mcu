@@ -46,9 +46,9 @@ private:
             if (_cur_val > 0) {
                 _cur_val--;
                 list_del(&req->ws_node);
-                workqueue_add_new_nolock(&_executor, req);
                 req->req_sta = Sem_req::REQ_OK;
-                trig_flg     = 1;
+                workqueue_add_new_nolock(&_executor, req);
+                trig_flg = 1;
             }
         }
         lock_release(lk);
@@ -68,6 +68,32 @@ public:
             Semaphore* tcq = static_cast<Semaphore*>(work);
             tcq->sem_chk_cb();
         };
+    }
+
+    ~Semaphore()
+    {
+        // Wake (fail) all pending acquire requests so their awaiting coroutines resume
+        // preventing dangling awaiters referencing a destroyed semaphore.
+        if (!list_empty(&acquire_list)) {
+            worknode* pos;
+            worknode* n;
+            int       trig_flg = 0;
+
+            uint32_t lk = lock_acquire();
+            list_for_each_entry_safe (pos, n, &acquire_list, ws_node, worknode) {
+                Sem_req* req = static_cast<Sem_req*>(pos);
+                list_del(&req->ws_node);
+                // mark as failed due to semaphore destruction
+                req->req_sta = Sem_req::REQ_FAIL;
+                workqueue_add_new_nolock(&_executor, req);
+                trig_flg = 1;
+            }
+            lock_release(lk);
+
+            if (trig_flg) {
+                workqueue_trig_once(&_executor);
+            }
+        }
     }
 
     void acquire(Sem_req& sem_req)
