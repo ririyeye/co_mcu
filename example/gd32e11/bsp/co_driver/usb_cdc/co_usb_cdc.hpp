@@ -1,4 +1,5 @@
-#include "syswork.hpp"
+#include "worker.hpp"
+#include <cstdint>
 
 struct cdc_usr;
 struct UsbCDCManager {

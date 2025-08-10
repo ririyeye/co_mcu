@@ -1,22 +1,27 @@
 #pragma once
-#include "co_base/task.hpp"
 #include "lock.h"
-#include "worker.hpp"
 #include "workqueue.h"
 #include <chrono>
+#include <coroutine>
 
 namespace co_mcu {
 
-struct Delayed_worknode : worknode {
+struct Timer_check_queue; // forward
+
+struct Timer_worknode : worknode {
     std::chrono::steady_clock::time_point expire;
-    Delayed_worknode*                     child   = nullptr;
-    Delayed_worknode*                     sibling = nullptr;
+    Timer_worknode*                       child       = nullptr;
+    Timer_worknode*                       sibling     = nullptr;
+    Timer_worknode*                       parent      = nullptr; // for removal
+    Timer_check_queue*                    owner_queue = nullptr; // set when enqueued
+
+    ~Timer_worknode();
 };
 
 struct Timer_check_queue : worknode {
 private:
-    workqueue&        _executor;
-    Delayed_worknode* heap_root;
+    workqueue&      _executor;
+    Timer_worknode* heap_root;
 
     /**
      * @brief 合并两个最小堆（pairing heap）的根节点，返回新的根节点
@@ -29,7 +34,7 @@ private:
      *    - 当 b 是新根时，a->sibling 指向 b->child，b->child 更新为 a。
      * 4. 返回合并后的新根，保持 pairing heap 的结构。
      */
-    static Delayed_worknode* heap_meld(Delayed_worknode* a, Delayed_worknode* b) noexcept
+    static Timer_worknode* heap_meld(Timer_worknode* a, Timer_worknode* b) noexcept
     {
         if (!a)
             return b;
@@ -38,10 +43,13 @@ private:
         if (a->expire <= b->expire) {
             b->sibling = a->child;
             a->child   = b;
+            b->parent  = a;
+            // siblings already have correct parent (a)
             return a;
         } else {
             a->sibling = b->child;
             b->child   = a;
+            a->parent  = b;
             return b;
         }
     }
@@ -57,20 +65,29 @@ private:
      * 5. 递归对 rest 调用 two_pass_merge，得到中间堆 root2；
      * 6. 最后用 heap_meld 合并 root1 和 root2，并返回最终堆根。
      */
-    static Delayed_worknode* two_pass_merge(Delayed_worknode* node) noexcept
+    static Timer_worknode* two_pass_merge(Timer_worknode* node) noexcept
     {
         if (!node || !node->sibling)
             return node;
-        Delayed_worknode* a    = node;
-        Delayed_worknode* b    = a->sibling;
-        Delayed_worknode* rest = b->sibling;
-        a->sibling             = nullptr;
-        b->sibling             = nullptr;
+        Timer_worknode* a    = node;
+        Timer_worknode* b    = a->sibling;
+        Timer_worknode* rest = b->sibling;
+        a->sibling           = nullptr;
+        b->sibling           = nullptr;
+        // detach parents since they become roots of temporary heaps
+        a->parent = nullptr;
+        b->parent = nullptr;
         return heap_meld(heap_meld(a, b), two_pass_merge(rest));
     }
 
     // 删除最小元素（根）并返回新的堆
-    static Delayed_worknode* delete_min(Delayed_worknode* root) noexcept { return two_pass_merge(root->child); }
+    static Timer_worknode* delete_min(Timer_worknode* root) noexcept
+    {
+        Timer_worknode* nr = two_pass_merge(root->child);
+        if (nr)
+            nr->parent = nullptr;
+        return nr;
+    }
 
     void tim_chk_cb()
     {
@@ -78,8 +95,13 @@ private:
         int      trig_flg = 0;
         uint32_t lk       = lock_acquire();
         while (heap_root && heap_root->expire <= now) {
-            Delayed_worknode* dpos = heap_root;
-            heap_root              = delete_min(heap_root);
+            Timer_worknode* dpos = heap_root;
+            heap_root            = delete_min(heap_root);
+            // detach popped node from heap so its destructor won't try to cancel again
+            dpos->owner_queue = nullptr;
+            dpos->parent      = nullptr;
+            dpos->child       = nullptr;
+            dpos->sibling     = nullptr;
             workqueue_add_new_nolock(&_executor, dpos);
             trig_flg = 1;
         }
@@ -100,15 +122,19 @@ public:
         };
     }
 
-    void post_delayed_work(Delayed_worknode* dwork, uint32_t ms)
+    void post_delayed_work(Timer_worknode* dwork, uint32_t ms)
     {
-        auto now       = std::chrono::steady_clock::now();
-        dwork->expire  = now + std::chrono::milliseconds(ms);
-        dwork->child   = nullptr;
-        dwork->sibling = nullptr;
+        auto now           = std::chrono::steady_clock::now();
+        dwork->expire      = now + std::chrono::milliseconds(ms);
+        dwork->child       = nullptr;
+        dwork->sibling     = nullptr;
+        dwork->parent      = nullptr;
+        dwork->owner_queue = this;
 
         uint32_t lk = lock_acquire();
         heap_root   = heap_meld(heap_root, dwork);
+        if (heap_root)
+            heap_root->parent = nullptr; // root parent must stay null
         lock_release(lk);
     }
 
@@ -119,9 +145,58 @@ public:
         }
         workqueue_post(&_executor, this);
     }
+
+    // 取消（移除）指定的定时节点（如果存在于当前队列）
+    void cancel(Timer_worknode* node)
+    {
+        uint32_t lk = lock_acquire();
+        if (!node || node->owner_queue != this) {
+            lock_release(lk);
+            return; // not in this queue
+        }
+
+        // Case: root removal
+        if (node == heap_root) {
+            heap_root = delete_min(heap_root);
+        } else {
+            // detach from parent's child list
+            Timer_worknode* parent = node->parent;
+            if (parent) {
+                Timer_worknode* cur  = parent->child;
+                Timer_worknode* prev = nullptr;
+                while (cur) {
+                    if (cur == node) {
+                        if (prev)
+                            prev->sibling = cur->sibling;
+                        else
+                            parent->child = cur->sibling;
+                        break;
+                    }
+                    prev = cur;
+                    cur  = cur->sibling;
+                }
+            }
+            // merge node's children back into heap
+            if (node->child) {
+                Timer_worknode* merged = two_pass_merge(node->child);
+                if (merged)
+                    merged->parent = nullptr; // new root of subheap
+                heap_root = heap_meld(heap_root, merged);
+                if (heap_root)
+                    heap_root->parent = nullptr;
+            }
+        }
+
+        // clear node links
+        node->child       = nullptr;
+        node->sibling     = nullptr;
+        node->parent      = nullptr;
+        node->owner_queue = nullptr;
+        lock_release(lk);
+    }
 };
 
-struct DelayAwaiter : Delayed_worknode {
+struct DelayAwaiter : Timer_worknode {
 
     explicit DelayAwaiter(Timer_check_queue& delay_queue, uint32_t ms) : _delay_queue(delay_queue) { wait_ms = ms; }
 
@@ -156,4 +231,12 @@ inline auto delay_ms(struct Timer_check_queue& dly_wkq, uint32_t ms)
     return DelayAwaiter(dly_wkq, ms);
 }
 
+}
+
+// Timer_worknode destructor (after Timer_check_queue defined)
+inline co_mcu::Timer_worknode::~Timer_worknode()
+{
+    if (owner_queue) {
+        owner_queue->cancel(this);
+    }
 }

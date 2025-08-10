@@ -1,4 +1,5 @@
-#include "syswork.hpp"
+#include "worker.hpp"
+#include <cstdint>
 
 struct uart_handle;
 struct UartManager {

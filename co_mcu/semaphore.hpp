@@ -1,14 +1,12 @@
 #pragma once
-#include "co_base/task.hpp"
 #include "lock.h"
-#include "worker.hpp"
 #include "workqueue.h"
-#include <chrono>
+#include <coroutine>
 
 namespace co_mcu {
 
 struct Sem_req : worknode {
-    Sem_req() { INIT_LIST_HEAD(&ws_node); }
+    explicit Sem_req() { INIT_LIST_HEAD(&ws_node); }
 
     ~Sem_req()
     {
@@ -118,9 +116,7 @@ public:
 
 struct SemReqAwaiter : Sem_req {
 
-    explicit SemReqAwaiter(Semaphore& sem) : mSemaphore(sem) { 
-        INIT_LIST_HEAD(&ws_node);
-    }
+    explicit SemReqAwaiter(Semaphore& sem) : mSemaphore(sem) { INIT_LIST_HEAD(&ws_node); }
 
     std::coroutine_handle<> mCoroutine;
     Semaphore&              mSemaphore;
@@ -153,6 +149,5 @@ inline auto wait_sem(Semaphore& sem)
 {
     return SemReqAwaiter(sem);
 }
-
 
 }

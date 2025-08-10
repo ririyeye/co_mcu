@@ -1,4 +1,5 @@
-#include "syswork.hpp"
+#include "worker.hpp"
+#include <cstdint>
 
 typedef enum {
     spi_is_master_not_slave = 1 << 0,
