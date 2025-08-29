@@ -1,9 +1,8 @@
 target("led")
     set_kind("binary")
 
-    add_deps("co_mcu")
-    add_deps("gd32e11_bsp")
-    add_deps("common")
+    -- add_deps("co_wq")
+    add_deps("gd32e11")
 
 
     add_files(

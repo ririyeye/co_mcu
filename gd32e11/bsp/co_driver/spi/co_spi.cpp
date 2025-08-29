@@ -8,6 +8,8 @@ extern "C" {
 #include "semaphore.hpp"
 #include "syswork.hpp"
 
+using namespace co_wq;
+
 struct spi_session : worknode {
     const uint8_t* tx_buf;
     const uint8_t* rx_buf;
@@ -29,11 +31,12 @@ struct spi_hard_info {
 };
 
 struct spi_handle : worknode {
-    explicit spi_handle(const struct spi_hard_info& info, struct workqueue& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1)
+    explicit spi_handle(const struct spi_hard_info& info, workqueue<cortex_lock>& wq)
+        : wq_(wq), mInfo(info), sem(wq_, 1, 1)
     {
     }
 
-    struct workqueue& wq_;
+    workqueue<cortex_lock>& wq_;
 
     uint32_t     is_init : 1;
     spi_mode_bit cur_mode;
@@ -41,8 +44,8 @@ struct spi_handle : worknode {
 
     const struct spi_hard_info& mInfo;
 
-    LIST_HEAD(list_work);
-    co_mcu::Semaphore sem;
+    list_head              list_work;
+    Semaphore<cortex_lock> sem;
 };
 
 static void spi0_pin_cfg(const struct spi_hard_info* pinfo)
@@ -210,10 +213,10 @@ static int spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
         return 0;
     }
 
-    worknode*    pbase = list_first_entry(&handle->list_work, worknode, ws_node);
+    worknode* pbase = list_first_entry(&handle->list_work, worknode, ws_node);
     spi_session* pnod  = static_cast<spi_session*>(pbase);
 
-    workqueue_add_new_nolock(&handle->wq_, pnod);
+    handle->wq_.add_new_nolock(*pnod);
 
     const struct spi_hard_info& pinfo = handle->mInfo;
 
@@ -252,7 +255,7 @@ static void spi_dma_cpl_cb(struct spi_handle* handle, int is_tx)
     lock_release(lk);
 
     if (ret) {
-        workqueue_trig_once(&handle->wq_);
+        handle->wq_.trig_once();
     }
 }
 
@@ -287,12 +290,12 @@ static void spi_transfer_setup(struct spi_handle& phandle, spi_session& psess)
     lock_release(lk);
 }
 
-co_mcu::Task<int, co_mcu::Work_Promise<int>>
+Task<int, Work_Promise<cortex_lock, int>>
 SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
 {
     struct co_spi_session : spi_session {
-        explicit co_spi_session(workqueue& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
-        co_mcu::Semaphore cpl_inotify;
+        explicit co_spi_session(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
+        Semaphore<cortex_lock> cpl_inotify;
     };
 
     co_spi_session node(handle_->wq_);
@@ -308,7 +311,7 @@ SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len,
 
     spi_transfer_setup(*handle_, node);
 
-    co_await co_mcu::SemReqAwaiter(node.cpl_inotify);
+    co_await SemReqAwaiter(node.cpl_inotify);
 
     co_return node.len;
 }
@@ -321,7 +324,7 @@ void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte)
     phandle->dummy_tx[3] = dummy_byte;
 }
 
-co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init(uint32_t mode)
+Task<bool, Work_Promise<cortex_lock, bool>> SpiManager::init(uint32_t mode)
 {
     if (handle_) {
         co_return true; // 已经初始化
@@ -332,7 +335,7 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> SpiManager::init(uint32_t mode)
         co_return false; // 获取句柄失败
     }
 
-    co_await co_mcu::SemReqAwaiter(tmp_handle->sem);
+    co_await SemReqAwaiter(tmp_handle->sem);
 
     handle_ = tmp_handle;
     if (mode != handle_->cur_mode) {

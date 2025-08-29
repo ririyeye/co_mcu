@@ -14,16 +14,16 @@ void usr_tick()
     get_sys_timer().tick_update();
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> u_send(UartManager& uart, void* buff, int len)
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> u_send(UartManager& uart, void* buff, int len)
 {
     co_await uart.uart_transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
 
-    co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+    co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
 
     co_return;
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> test_task()
 {
     auto uart = UartManager(0);
     bool succ = co_await uart.init();
@@ -40,7 +40,7 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> test_task()
     co_return;
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 {
     auto cdc  = UsbCDCManager();
     bool succ = co_await cdc.init();
@@ -52,13 +52,13 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_task()
     while (1) {
         const char hello[] = "hello world\r\n";
         co_await cdc.transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
-        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+        co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
 
     co_return;
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
         co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
@@ -70,7 +70,7 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_block_task(UsbCDCManager
 #define BLK_CNT 8
 char usb_buff[BLK_CNT][64];
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_task()
 {
     auto cdc  = UsbCDCManager();
     bool succ = co_await cdc.init();
@@ -85,13 +85,13 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> usb_recv_task()
     }
 
     while (1) {
-        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+        co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
 
     co_return;
 }
 
-co_mcu::Task<void, co_mcu::Work_Promise<void>> spi_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> spi_task()
 {
     auto spi  = SpiManager();
     bool succ = co_await spi.init(spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1);
@@ -104,7 +104,7 @@ co_mcu::Task<void, co_mcu::Work_Promise<void>> spi_task()
         char testpp[] = "123456";
         co_await spi.transfer((uint8_t*)testpp, nullptr, 6, 0);
 
-        co_await co_mcu::DelayAwaiter(get_sys_timer(), 1000);
+        co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
 
     co_return;
@@ -126,7 +126,7 @@ void usr_init(void)
 void usr_loop(void)
 {
     while (true) {
-        int sta = workqueue_once(&get_sys_workqueue());
+        int sta = get_sys_workqueue().work_once();
         if (!sta) {
             return;
         }

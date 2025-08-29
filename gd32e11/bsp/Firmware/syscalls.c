@@ -34,7 +34,6 @@ caddr_t _sbrk(int incr)
   curbrk += incr;
   return curbrk - incr;
 }
-
 /*
  * _gettimeofday primitive (Stub function)
  * */

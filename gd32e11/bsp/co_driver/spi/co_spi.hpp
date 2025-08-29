@@ -1,3 +1,4 @@
+#include "syswork.hpp"
 #include "worker.hpp"
 #include <cstdint>
 
@@ -30,8 +31,8 @@ struct SpiManager {
 public:
     SpiManager() : handle_(nullptr) { }
     ~SpiManager();
-    co_mcu::Task<bool, co_mcu::Work_Promise<bool>> init(uint32_t mode);
-    co_mcu::Task<int, co_mcu::Work_Promise<int>>
+    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> init(uint32_t mode);
+    co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>>
     transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit);
 
 private:

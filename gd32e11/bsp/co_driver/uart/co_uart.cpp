@@ -4,6 +4,9 @@ extern "C" {
 #include "co_uart.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
+
+using namespace co_wq;
+
 struct UART_FLG {
     uint32_t tx_not_rx  : 1;
     uint32_t rx_timeout : 8;
@@ -18,9 +21,9 @@ struct uart_session : worknode {
 };
 
 struct uart_handle : worknode {
-    explicit uart_handle(const struct uart_hard_info* info, workqueue& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1) { }
+    explicit uart_handle(const struct uart_hard_info* info, workqueue<cortex_lock>& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1) { }
 
-    struct workqueue& wq_;
+    struct workqueue<cortex_lock>& wq_;
 
     uint32_t is_init : 1;
 
@@ -28,10 +31,10 @@ struct uart_handle : worknode {
 
     const struct uart_hard_info* mInfo;
 
-    LIST_HEAD(list_work_tx);
-    LIST_HEAD(list_work_rx);
+    list_head list_work_tx;
+    list_head list_work_rx;
 
-    co_mcu::Semaphore sem;
+    Semaphore<cortex_lock> sem;
 };
 
 struct uart_hard_info {
@@ -105,7 +108,7 @@ struct uart_handle* uart_handle_get(int num)
     return phandle;
 }
 
-co_mcu::Semaphore& uart_handle_get(struct uart_handle* puart)
+Semaphore<cortex_lock>& uart_handle_get(struct uart_handle* puart)
 {
     return puart->sem;
 }
@@ -122,7 +125,7 @@ static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod
 
 static int uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
 {
-    workqueue_add_new_nolock(&phandle->wq_, pnod);
+    phandle->wq_.add_new_nolock(*pnod);
 
     if (!list_empty(&phandle->list_work_rx)) {
 
@@ -179,7 +182,7 @@ static int _uart_irq_handle(struct uart_handle* phandle)
         uart_session* pnod  = static_cast<uart_session*>(pbase);
         usart_data_transmit(phard->uart_periph, pnod->buff[pnod->cur_len++]);
         if (pnod->cur_len >= pnod->len) {
-            workqueue_add_new_nolock(&phandle->wq_, pnod);
+            phandle->wq_.add_new_nolock(*pnod);
             retcnt++;
             if (list_empty(&phandle->list_work_tx)) {
                 usart_interrupt_disable(phard->uart_periph, USART_INT_TBE);
@@ -197,7 +200,7 @@ static void uart_irq_handle(struct uart_handle* phandle)
     lock_release(lk);
 
     if (evt) {
-        workqueue_trig_once(&phandle->wq_);
+        phandle->wq_.trig_once();
     }
 }
 
@@ -264,11 +267,11 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
     return ret;
 }
 
-co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
+co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
-        explicit tx_uart_session(workqueue& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
-        co_mcu::Semaphore cpl_inotify;
+        explicit tx_uart_session(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
+        Semaphore<cortex_lock> cpl_inotify;
     };
 
     tx_uart_session node(handle_->wq_);
@@ -284,12 +287,12 @@ co_mcu::Task<int, co_mcu::Work_Promise<int>> UartManager::uart_transfer(uint8_t*
 
     uart_ext_transfer_cb(handle_, node);
 
-    co_await co_mcu::SemReqAwaiter(node.cpl_inotify);
+    co_await co_wq::SemReqAwaiter(node.cpl_inotify);
 
     co_return node.cur_len;
 }
 
-co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UartManager::init()
+co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> UartManager::init()
 {
     if (handle_) {
         co_return true; // 已经初始化
@@ -300,7 +303,7 @@ co_mcu::Task<bool, co_mcu::Work_Promise<bool>> UartManager::init()
         co_return false; // 获取句柄失败
     }
 
-    co_await co_mcu::SemReqAwaiter(uart_handle_get(tmp_handle));
+    co_await co_wq::SemReqAwaiter(uart_handle_get(tmp_handle));
 
     handle_ = tmp_handle;
 

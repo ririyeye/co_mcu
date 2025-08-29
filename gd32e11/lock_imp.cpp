@@ -1,5 +1,8 @@
-#include "cmsis_compiler.h"
-#include "lock.h"
+extern "C" {
+    #include "cmsis_compiler.h"
+}
+
+#include "lock.hpp"
 #include <stdint.h>
 
 uint32_t call_counter = 0;

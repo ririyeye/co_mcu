@@ -2,7 +2,7 @@
 
 target("gd32e11_bsp")
 
-    add_deps("co_mcu")
+    add_deps("co_wq")
 
     add_linkgroups("gd32e11_bsp", { whole = true, public = true })
 
