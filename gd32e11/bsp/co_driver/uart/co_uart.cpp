@@ -21,7 +21,10 @@ struct uart_session : worknode {
 };
 
 struct uart_handle : worknode {
-    explicit uart_handle(const struct uart_hard_info* info, workqueue<cortex_lock>& wq) : wq_(wq), mInfo(info), sem(wq_, 1, 1) { }
+    explicit uart_handle(const struct uart_hard_info* info, workqueue<cortex_lock>& wq)
+        : wq_(wq), mInfo(info), sem(wq_, 1, 1)
+    {
+    }
 
     struct workqueue<cortex_lock>& wq_;
 
@@ -267,7 +270,7 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
     return ret;
 }
 
-co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
+Task<int, Work_Promise<cortex_lock, int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
 {
     struct tx_uart_session : uart_session {
         explicit tx_uart_session(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
@@ -287,12 +290,12 @@ co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>> UartManager::uart_transf
 
     uart_ext_transfer_cb(handle_, node);
 
-    co_await co_wq::SemReqAwaiter(node.cpl_inotify);
+    co_await SemReqAwaiter(node.cpl_inotify);
 
     co_return node.cur_len;
 }
 
-co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> UartManager::init()
+Task<bool, Work_Promise<cortex_lock, bool>> UartManager::init()
 {
     if (handle_) {
         co_return true; // 已经初始化
@@ -303,7 +306,7 @@ co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> UartManager::init()
         co_return false; // 获取句柄失败
     }
 
-    co_await co_wq::SemReqAwaiter(uart_handle_get(tmp_handle));
+    co_await SemReqAwaiter(uart_handle_get(tmp_handle));
 
     handle_ = tmp_handle;
 

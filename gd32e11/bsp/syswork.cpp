@@ -1,7 +1,10 @@
 #include "syswork.hpp"
 #include "workqueue.hpp"
 #include <atomic>
-struct executor_wq : co_wq::workqueue<cortex_lock> {
+
+using namespace co_wq;
+
+struct executor_wq : workqueue<cortex_lock> {
     std::atomic_int trig_cnt = 0;
 
     explicit executor_wq()
@@ -14,15 +17,15 @@ struct executor_wq : co_wq::workqueue<cortex_lock> {
     }
 };
 
-executor_wq       executor;
-co_wq::Timer_check_queue<cortex_lock> timer(executor);
+executor_wq                    executor;
+Timer_check_queue<cortex_lock> timer(executor);
 
-co_wq::workqueue<cortex_lock>& get_sys_workqueue(void)
+workqueue<cortex_lock>& get_sys_workqueue(void)
 {
     return executor;
 }
 
-co_wq::Timer_check_queue<cortex_lock>& get_sys_timer(void)
+Timer_check_queue<cortex_lock>& get_sys_timer(void)
 {
     return timer;
 }

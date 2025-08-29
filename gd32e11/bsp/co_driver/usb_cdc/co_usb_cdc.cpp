@@ -11,7 +11,6 @@ usb_core_driver cdc_acm;
 
 using namespace co_wq;
 
-
 typedef enum {
     cdc_ret_error    = -1,
     cdc_ret_null_pkt = -2,
@@ -216,7 +215,7 @@ struct cdc_usr* get_cdc_init(void)
     return &cdc_data;
 }
 
-co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> UsbCDCManager::init()
+Task<bool, Work_Promise<cortex_lock, bool>> UsbCDCManager::init()
 {
     if (handle_) {
         co_return true; // 已经初始化
@@ -227,14 +226,14 @@ co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>> UsbCDCManager::init()
         co_return false; // 获取句柄失败
     }
 
-    co_await co_wq::SemReqAwaiter(tmp_handle->sem);
+    co_await SemReqAwaiter(tmp_handle->sem);
 
     handle_ = tmp_handle;
 
     co_return true;
 }
 
-co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>> UsbCDCManager::transfer(uint8_t* data, size_t len, int tx)
+Task<int, Work_Promise<cortex_lock, int>> UsbCDCManager::transfer(uint8_t* data, size_t len, int tx)
 {
     struct cdc_usr_node_cb : cdc_usr_node {
         explicit cdc_usr_node_cb(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { }
@@ -259,7 +258,7 @@ co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>> UsbCDCManager::transfer(
                                tx);
     lock_release(lk);
 
-    co_await co_wq::SemReqAwaiter(node.cpl_inotify);
+    co_await SemReqAwaiter(node.cpl_inotify);
 
     co_return node.dat_cur;
 }

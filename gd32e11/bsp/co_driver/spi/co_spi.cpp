@@ -213,7 +213,7 @@ static int spi_dma_cpl_cb_critical(struct spi_handle* handle, int is_tx)
         return 0;
     }
 
-    worknode* pbase = list_first_entry(&handle->list_work, worknode, ws_node);
+    worknode*    pbase = list_first_entry(&handle->list_work, worknode, ws_node);
     spi_session* pnod  = static_cast<spi_session*>(pbase);
 
     handle->wq_.add_new_nolock(*pnod);
