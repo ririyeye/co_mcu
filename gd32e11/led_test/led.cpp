@@ -34,7 +34,7 @@ public:
 
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(UartManager& uart, void* buff, int len)
 {
-    co_await uart.uart_transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
+    co_await uart.transfer_await(reinterpret_cast<uint8_t*>(buff), len, 1);
 
     co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
 
@@ -44,7 +44,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_task()
 {
     auto uart = UartManager(0);
-    bool succ = co_await uart.init();
+    bool succ = co_await uart.init_await();
 
     if (!succ) {
         co_return;
@@ -61,27 +61,23 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_ta
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 {
     auto cdc  = UsbCDCManager();
-    bool succ = co_await cdc.init();
-
+    bool succ = co_await cdc.init_await();
     if (!succ) {
         co_return;
     }
-
     while (1) {
         const char hello[] = "hello world\r\n";
-        co_await cdc.transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
+        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
         co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
-
     co_return;
 }
 
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
-        co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
+        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), len, 0);
     }
-
     co_return;
 }
 
@@ -91,40 +87,33 @@ char usb_buff[BLK_CNT][64];
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_task()
 {
     auto cdc  = UsbCDCManager();
-    bool succ = co_await cdc.init();
-
+    bool succ = co_await cdc.init_await();
     if (!succ) {
         co_return;
     }
-
     for (int i = 0; i < BLK_CNT; i++) {
         auto u1 = usb_recv_block_task(cdc, usb_buff[i], sizeof(usb_buff[i]));
         post_to(u1, get_sys_workqueue());
     }
-
     while (1) {
         co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
-
     co_return;
 }
 
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> spi_task()
 {
-    auto spi  = SpiManager();
-    bool succ = co_await spi.init(spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1);
-
+    auto     spi  = SpiManager();
+    uint32_t mode = spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1;
+    bool     succ = co_await spi.init_await(mode);
     if (!succ) {
         co_return;
     }
-
     while (1) {
         char testpp[] = "123456";
-        co_await spi.transfer((uint8_t*)testpp, nullptr, 6, 0);
-
+        co_await spi.transfer_await(reinterpret_cast<uint8_t*>(testpp), nullptr, 6, 0);
         co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
-
     co_return;
 }
 
@@ -150,7 +139,7 @@ void usr_loop(void)
     }
 }
 
-extern "C" int main()
+int main()
 {
     nvic_priority_group_set(NVIC_PRIGROUP_PRE4_SUB0);
     systick_config();
