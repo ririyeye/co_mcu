@@ -53,7 +53,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_ta
     auto u1 = u_send(uart, (void*)"test", 4);
     auto u2 = u_send(uart, (void*)"pppp", 4);
 
-    co_await when_all(u1, u2);
+    co_await when_all_awaitable(u1, u2);
 
     co_return;
 }
