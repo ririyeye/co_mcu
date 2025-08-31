@@ -14,7 +14,25 @@ void usr_tick()
     get_sys_timer().tick_update();
 }
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> u_send(UartManager& uart, void* buff, int len)
+task_stat usr_sta;
+
+struct usr_taskalloc {
+
+public:
+    void* alloc(std::size_t size)
+    {
+        usr_sta.malloc_cnt++;
+        return malloc(size);
+    }
+    void dealloc(void* ptr, std::size_t sz) noexcept
+    {
+        (void)sz;
+        usr_sta.free_cnt++;
+        free(ptr);
+    }
+};
+
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(UartManager& uart, void* buff, int len)
 {
     co_await uart.uart_transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
 
@@ -23,7 +41,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> u_send(UartManager& ua
     co_return;
 }
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> test_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_task()
 {
     auto uart = UartManager(0);
     bool succ = co_await uart.init();
@@ -58,7 +76,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
     co_return;
 }
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
         co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
@@ -70,7 +88,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_block_task(Usb
 #define BLK_CNT 8
 char usb_buff[BLK_CNT][64];
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_task()
 {
     auto cdc  = UsbCDCManager();
     bool succ = co_await cdc.init();
@@ -91,7 +109,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> usb_recv_task()
     co_return;
 }
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> spi_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> spi_task()
 {
     auto spi  = SpiManager();
     bool succ = co_await spi.init(spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1);
@@ -109,7 +127,6 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock,void>> spi_task()
 
     co_return;
 }
-
 
 void usr_init(void)
 {
