@@ -1,3 +1,7 @@
+// UART 驱动实现：
+// 1. 维护 uart_handle（含发送/接收队列、互斥信号量）
+// 2. 中断服务例程根据硬件事件推进当前会话并调度完成回调
+// 3. 协程接口在 co_uart.hpp 中模板化（支持自定义 allocator）
 extern "C" {
 #include "gd32e11x_rcu.h"
 }
@@ -7,18 +11,7 @@ extern "C" {
 
 using namespace co_wq;
 
-struct UART_FLG {
-    uint32_t tx_not_rx  : 1;
-    uint32_t rx_timeout : 8;
-    uint32_t fast_cb    : 1;
-};
-
-struct uart_session : worknode {
-    uint8_t*        buff;
-    uint32_t        len;
-    uint32_t        cur_len; // 当前已传输长度
-    struct UART_FLG flg;
-};
+// 内部结构定义（模板仅依赖前向声明与访问函数）
 
 struct uart_handle : worknode {
     explicit uart_handle(const struct uart_hard_info* info, workqueue<cortex_lock>& wq)
@@ -30,7 +23,7 @@ struct uart_handle : worknode {
 
     uint32_t is_init : 1;
 
-    int baud_rate = 1152000;
+    int baud_rate = 1152000; // 默认波特率
 
     const struct uart_hard_info* mInfo;
 
@@ -64,8 +57,9 @@ static const struct uart_hard_info hard_u0 = {
     .uart_pin_cfg = uart0_pin_cfg,
 };
 
-struct uart_handle uart_0(&hard_u0, get_sys_workqueue());
+struct uart_handle uart_0(&hard_u0, get_sys_workqueue()); // 单实例 UART0
 
+// 硬件底层初始化（时钟 / GPIO / USART 配置）
 static void uart_hard_init(const struct uart_hard_info* phard, int baud_rate)
 {
     nvic_irq_enable(phard->uart_irq_num, 0, 0);
@@ -83,6 +77,7 @@ static void uart_hard_init(const struct uart_hard_info* phard, int baud_rate)
     }
 }
 
+// 若未初始化则进行一次底层硬件初始化
 static struct uart_handle* _uart_ext_handle_require(struct uart_handle* puart)
 {
     if (puart->is_init) {
@@ -96,6 +91,7 @@ static struct uart_handle* _uart_ext_handle_require(struct uart_handle* puart)
     return puart;
 }
 
+// 通过编号获取句柄（目前仅支持 0）
 struct uart_handle* uart_handle_get(int num)
 {
     struct uart_handle* phandle = NULL;
@@ -111,11 +107,13 @@ struct uart_handle* uart_handle_get(int num)
     return phandle;
 }
 
+// 返回互斥信号量（供 init 协程获取独占）
 Semaphore<cortex_lock>& uart_handle_get(struct uart_handle* puart)
 {
     return puart->sem;
 }
 
+// 停止接收（关闭相关中断与超时）
 static void uart_stop_rx(const struct uart_hard_info* phard)
 {
     usart_receiver_timeout_disable(phard->uart_periph);
@@ -126,6 +124,7 @@ static void uart_stop_rx(const struct uart_hard_info* phard)
 
 static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod);
 
+// 一个接收会话完成：放入工作队列并尝试启动下一个
 static int uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod)
 {
     phandle->wq_.add_new_nolock(*pnod);
@@ -140,6 +139,11 @@ static int uart_rx_handle(struct uart_handle* phandle, struct uart_session* pnod
     return 1;
 }
 
+// 核心中断处理：
+// - 接收超时事件
+// - 接收数据就绪
+// - 发送缓冲空
+// 返回触发完成回调的工作节点数量
 static int _uart_irq_handle(struct uart_handle* phandle)
 {
     int retcnt = 0;
@@ -196,6 +200,7 @@ static int _uart_irq_handle(struct uart_handle* phandle)
     return retcnt;
 }
 
+// 包装：加锁 + 触发工作队列
 static void uart_irq_handle(struct uart_handle* phandle)
 {
     uint32_t lk  = lock_acquire();
@@ -212,11 +217,13 @@ extern "C" void USART0_IRQHandler(void)
     uart_irq_handle(&uart_0);
 }
 
+// 启动发送：仅使能发送空中断即可触发循环
 static void uart_setup_tx(struct uart_handle* phandle)
 {
     usart_interrupt_enable(phandle->mInfo->uart_periph, USART_INT_TBE);
 }
 
+// 启动接收：根据会话配置可选开启超时
 static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod)
 {
     usart_interrupt_enable(phandle->mInfo->uart_periph, USART_INT_RBNE);
@@ -229,6 +236,7 @@ static void uart_setup_rx(struct uart_handle* phandle, struct uart_session* pnod
     }
 }
 
+// 挂接一个会话到发送或接收队列；若为空队列则立即启动硬件
 static int _uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
 {
     uint32_t tx_setup = 0;
@@ -262,7 +270,8 @@ static int _uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess
     return 0;
 }
 
-static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
+// 外部可调用（协程模板）：封装加锁
+int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
 {
     uint32_t lk  = lock_acquire();
     int      ret = _uart_ext_transfer_cb(handle, psess);
@@ -270,53 +279,18 @@ static int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
     return ret;
 }
 
-Task<int, Work_Promise<cortex_lock, int>> UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
+// 访问工作队列（协程模板使用）
+co_wq::workqueue<cortex_lock>& uart_handle_wq(struct uart_handle* handle)
 {
-    struct tx_uart_session : uart_session {
-        explicit tx_uart_session(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
-        Semaphore<cortex_lock> cpl_inotify;
-    };
-
-    tx_uart_session node(handle_->wq_);
-    node.buff          = const_cast<uint8_t*>(data);
-    node.len           = len;
-    node.cur_len       = 0;
-    node.flg.tx_not_rx = !!tx; // 仅发送数据，不接收
-
-    node.func = [](struct worknode* pws) {
-        tx_uart_session* psess = static_cast<tx_uart_session*>(pws);
-        psess->cpl_inotify.release();
-    };
-
-    uart_ext_transfer_cb(handle_, node);
-
-    co_await SemReqAwaiter(node.cpl_inotify);
-
-    co_return node.cur_len;
+    return handle->wq_;
 }
 
-Task<bool, Work_Promise<cortex_lock, bool>> UartManager::init()
-{
-    if (handle_) {
-        co_return true; // 已经初始化
-    }
-
-    auto tmp_handle = uart_handle_get(uart_num_);
-    if (!tmp_handle) {
-        co_return false; // 获取句柄失败
-    }
-
-    co_await SemReqAwaiter(uart_handle_get(tmp_handle));
-
-    handle_ = tmp_handle;
-
-    co_return true;
-}
+// templated coroutine definitions moved to header
 
 UartManager::~UartManager()
 {
     if (handle_) {
-        uart_handle_get(handle_).release();
+        ::uart_handle_get(handle_).release();
         handle_ = nullptr;
     }
 }

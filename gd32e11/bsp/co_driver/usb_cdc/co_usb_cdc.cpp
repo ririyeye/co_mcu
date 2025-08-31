@@ -18,11 +18,7 @@ typedef enum {
     cdc_ret_pkt_cpl  = 1,
 } cdc_ret;
 
-struct cdc_usr_node : worknode {
-    uint8_t* data;
-    uint16_t dat_max; // 总长度
-    uint16_t dat_cur; // 正在处理的位置
-};
+// cdc_usr_node 定义移到 internal 头（供模板协程使用）
 
 struct cdc_usr : worknode {
     explicit cdc_usr(workqueue<cortex_lock>& wq) : wq_(wq), sem(wq_, 1, 1)
@@ -37,8 +33,8 @@ struct cdc_usr : worknode {
     uint32_t is_init       : 1;
     uint32_t usb_ready_flg : 1;
 
-    list_head list_work_tx;
-    list_head list_work_rx;
+    co_wq::list_head list_work_tx;
+    co_wq::list_head list_work_rx;
 
     Semaphore<cortex_lock> sem;
 };
@@ -58,7 +54,7 @@ void            cdc_usr_init(void)
     usb_intr_config();
 }
 
-static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, struct list_head* phead, int txflg, struct cdc_usr* pcdc)
+static cdc_ret cdc_usr_cpl_cb_nolock(int len, uint8_t* addr, co_wq::list_head* phead, int txflg, struct cdc_usr* pcdc)
 {
     // 没有可以接收的 数据节点
     if (list_empty(phead)) {
@@ -174,7 +170,7 @@ extern "C" void cdc_usr_set_ready(usb_dev* udev)
     lock_release(lk);
 }
 
-void cdc_usr_async_setup_nolock(struct list_head* plist,
+void cdc_usr_async_setup_nolock(co_wq::list_head* plist,
                                 cdc_usr_node*     pnod,
                                 int               usb_ready_flg,
                                 usb_dev*          udev,
@@ -215,52 +211,32 @@ struct cdc_usr* get_cdc_init(void)
     return &cdc_data;
 }
 
-Task<bool, Work_Promise<cortex_lock, bool>> UsbCDCManager::init()
+// 模板版本实现已迁移到头文件
+
+// ===== 提供给模板的访问函数 =====
+co_wq::workqueue<cortex_lock>& cdc_usr_wq(struct cdc_usr* h)
 {
-    if (handle_) {
-        co_return true; // 已经初始化
-    }
-
-    auto tmp_handle = get_cdc_init();
-    if (!tmp_handle) {
-        co_return false; // 获取句柄失败
-    }
-
-    co_await SemReqAwaiter(tmp_handle->sem);
-
-    handle_ = tmp_handle;
-
-    co_return true;
+    return h->wq_;
 }
-
-Task<int, Work_Promise<cortex_lock, int>> UsbCDCManager::transfer(uint8_t* data, size_t len, int tx)
+co_wq::Semaphore<cortex_lock>& cdc_usr_sem(struct cdc_usr* h)
 {
-    struct cdc_usr_node_cb : cdc_usr_node {
-        explicit cdc_usr_node_cb(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { }
-        Semaphore<cortex_lock> cpl_inotify;
-    };
-
-    cdc_usr_node_cb node(handle_->wq_);
-    node.data    = const_cast<uint8_t*>(data);
-    node.dat_max = len;
-    node.dat_cur = 0;
-
-    node.func = [](struct worknode* pws) {
-        cdc_usr_node_cb* psess = static_cast<cdc_usr_node_cb*>(pws);
-        psess->cpl_inotify.release();
-    };
-
-    uint32_t lk = lock_acquire();
-    cdc_usr_async_setup_nolock(tx ? &handle_->list_work_tx : &handle_->list_work_rx,
-                               &node,
-                               handle_->usb_ready_flg,
-                               handle_->udev,
-                               tx);
-    lock_release(lk);
-
-    co_await SemReqAwaiter(node.cpl_inotify);
-
-    co_return node.dat_cur;
+    return h->sem;
+}
+co_wq::list_head* cdc_usr_list_tx(struct cdc_usr* h)
+{
+    return &h->list_work_tx;
+}
+co_wq::list_head* cdc_usr_list_rx(struct cdc_usr* h)
+{
+    return &h->list_work_rx;
+}
+int cdc_usr_ready(struct cdc_usr* h)
+{
+    return h->usb_ready_flg;
+}
+usb_dev* cdc_usr_dev(struct cdc_usr* h)
+{
+    return h->udev;
 }
 
 UsbCDCManager::~UsbCDCManager()

@@ -10,13 +10,6 @@ extern "C" {
 
 using namespace co_wq;
 
-struct spi_session : worknode {
-    const uint8_t* tx_buf;
-    const uint8_t* rx_buf;
-    uint32_t       len;
-    uint32_t       ctrl_bit;
-};
-
 struct spi_hard_info {
     rcu_periph_enum rcu_spi;
     struct hard_dma dma[2];
@@ -283,37 +276,11 @@ static void spi_transfer_setup_nolock(struct spi_handle& phandle, spi_session& p
     }
 }
 
-static void spi_transfer_setup(struct spi_handle& phandle, spi_session& psess)
+void spi_transfer_setup(struct spi_handle& phandle, spi_session& psess)
 {
     uint32_t lk = lock_acquire();
     spi_transfer_setup_nolock(phandle, psess);
     lock_release(lk);
-}
-
-Task<int, Work_Promise<cortex_lock, int>>
-SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
-{
-    struct co_spi_session : spi_session {
-        explicit co_spi_session(workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1) { INIT_LIST_HEAD(&ws_node); }
-        Semaphore<cortex_lock> cpl_inotify;
-    };
-
-    co_spi_session node(handle_->wq_);
-    node.tx_buf   = tx_buff;
-    node.rx_buf   = rx_buff;
-    node.len      = len;
-    node.ctrl_bit = ctrl_bit;
-
-    node.func = [](struct worknode* pws) {
-        co_spi_session* psess = static_cast<co_spi_session*>(pws);
-        psess->cpl_inotify.release();
-    };
-
-    spi_transfer_setup(*handle_, node);
-
-    co_await SemReqAwaiter(node.cpl_inotify);
-
-    co_return node.len;
 }
 
 void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte)
@@ -324,27 +291,25 @@ void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte)
     phandle->dummy_tx[3] = dummy_byte;
 }
 
-Task<bool, Work_Promise<cortex_lock, bool>> SpiManager::init(uint32_t mode)
+// 模板版本实现已迁移到头文件
+
+// ===== 提供给模板的访问函数 =====
+co_wq::workqueue<cortex_lock>& spi_handle_wq(struct spi_handle* h)
 {
-    if (handle_) {
-        co_return true; // 已经初始化
-    }
-
-    auto tmp_handle = spi_handle_get_init();
-    if (!tmp_handle) {
-        co_return false; // 获取句柄失败
-    }
-
-    co_await SemReqAwaiter(tmp_handle->sem);
-
-    handle_ = tmp_handle;
-    if (mode != handle_->cur_mode) {
-        spi_master_config(&handle_->mInfo, mode);
-    }
-
-    spi_ext_set_sp_dummy_byte(handle_, 0xff);
-
-    co_return true;
+    return h->wq_;
+}
+co_wq::Semaphore<cortex_lock>& spi_handle_sem(struct spi_handle* h)
+{
+    return h->sem;
+}
+uint32_t spi_handle_get_mode(struct spi_handle* h)
+{
+    return h->cur_mode;
+}
+void spi_handle_config_mode(struct spi_handle* h, uint32_t mode)
+{
+    spi_master_config(&h->mInfo, mode);
+    h->cur_mode = (spi_mode_bit)mode;
 }
 
 SpiManager::~SpiManager()
