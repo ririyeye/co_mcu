@@ -5,7 +5,6 @@ includes("led_test")
 target("gd32e11")
     set_kind("static")
 
-    add_deps("co_wq")
     add_deps("gd32e11_bsp")
 
     add_includedirs(
