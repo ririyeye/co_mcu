@@ -1,4 +1,4 @@
-#include "../internal/spi_internal.hpp"
+#include "co_spi_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
 #include "worker.hpp"

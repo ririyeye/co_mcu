@@ -1,7 +1,7 @@
 // UART 协程管理器接口
 // 提供 init 与 uart_transfer 两个协程接口，支持自定义协程帧分配器 Alloc
 // 使用 intrusive workqueue + 中断驱动完成异步收发。
-#include "../internal/uart_internal.hpp"
+#include "co_uart_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
 #include "worker.hpp"

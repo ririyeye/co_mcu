@@ -1,4 +1,4 @@
-#include "../internal/usb_cdc_internal.hpp"
+#include "co_usb_cdc_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
 #include "worker.hpp"
