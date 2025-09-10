@@ -1,5 +1,26 @@
 
 
+-- 外设功能开关：SPI / UART / USB CDC
+-- 需求：这三个选项均默认开启，可单独关闭
+option("gd32_spi")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable building GD32 SPI function")
+option_end()
+
+option("gd32_uart")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable building GD32 UART function")
+option_end()
+
+option("gd32_usb")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable building GD32 USB CDC function")
+option_end()
+
+
 target("gd32e11_bsp")
 
     add_deps("co_wq")
@@ -56,7 +77,8 @@ target("gd32e11_bsp")
 
     add_defines("USE_STDPERIPH_DRIVER", "GD32E11X")
 
-    -- usb
+    -- usb (受开关控制)
+if has_config("gd32_usb") then
     add_defines("USE_USB_FS")
     add_files(
         "Firmware/GD32E11x_usbfs_library/device/class/cdc/Source/cdc_acm_core.c",
@@ -73,13 +95,15 @@ target("gd32e11_bsp")
         "Firmware/GD32E11x_usbfs_library/device/class/cdc/Include"
         -- , {public=true}
     )
+end
 
     -- com
     add_includedirs(
         "co_driver", {public=true}
     )
 
-    -- uart
+    -- uart (受开关控制)
+if has_config("gd32_uart") then
     add_files(
         "co_driver/uart/co_uart.cpp"
         -- , {optimize = "none"}
@@ -88,7 +112,9 @@ target("gd32e11_bsp")
     add_includedirs(
         "co_driver/uart", {public=true}
     )
+end
 
+if has_config("gd32_spi") then
     -- spi
     add_files(
         "co_driver/spi/co_spi.cpp"
@@ -98,8 +124,10 @@ target("gd32e11_bsp")
     add_includedirs(
         "co_driver/spi", {public=true}
     )
+end
 
-    -- usb
+if has_config("gd32_usb") then
+    -- usb cdc driver layer
     add_files(
         "co_driver/usb_cdc/co_usb_cdc.cpp",
         "co_driver/usb_cdc/gd32e11x_hw.c",
@@ -110,5 +138,6 @@ target("gd32e11_bsp")
     add_includedirs(
         "co_driver/usb_cdc", {public=true}
     )
+end
 
 target_end()
