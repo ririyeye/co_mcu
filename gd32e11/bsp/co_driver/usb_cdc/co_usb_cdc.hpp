@@ -10,20 +10,21 @@ struct UsbCDCManager {
 public:
     UsbCDCManager() : handle_(nullptr) { }
     ~UsbCDCManager();
+    void release();
     // 可自定义协程帧分配器 Alloc
     template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> init();
+    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire();
     // tx=1 发送; tx=0 接收（阻塞等待满或数据到来即完成）
     template <typename Alloc = co_wq::sys_taskalloc>
     co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc> transfer(uint8_t* data, size_t len, int tx);
 
-    struct InitAwaiter {
+    struct AcquireAwaiter {
         UsbCDCManager& self;
         cdc_usr*       tmp { nullptr };
         bool           result { false };
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
-        explicit InitAwaiter(UsbCDCManager& m) : self(m) { }
+        explicit AcquireAwaiter(UsbCDCManager& m) : self(m) { }
         bool await_ready()
         {
             if (self.handle_) {
@@ -51,7 +52,7 @@ public:
             return result;
         }
     };
-    InitAwaiter init_await() { return InitAwaiter(*this); }
+    AcquireAwaiter acquire_await() { return AcquireAwaiter(*this); }
     static_assert(std::is_trivially_destructible_v<SemAwaiter>, "SemReqAwaiter must remain trivially destructible");
 
     struct TransferAwaiter {
@@ -114,9 +115,9 @@ private:
 // ============== 模板实现 ==============
 
 // 初始化 USB CDC 设备（只初始化一次）
-template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UsbCDCManager::init()
+template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UsbCDCManager::acquire()
 {
-    co_return co_await init_await();
+    co_return co_await acquire_await();
 }
 
 // USB CDC 传输/接收

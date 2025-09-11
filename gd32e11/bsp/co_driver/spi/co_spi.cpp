@@ -312,10 +312,15 @@ void spi_handle_config_mode(struct spi_handle* h, uint32_t mode)
     h->cur_mode = (spi_mode_bit)mode;
 }
 
-SpiManager::~SpiManager()
+void SpiManager::release()
 {
     if (handle_) {
         handle_->sem.release();
         handle_ = nullptr;
     }
+}
+
+SpiManager::~SpiManager()
+{
+    release();
 }

@@ -287,10 +287,15 @@ co_wq::workqueue<cortex_lock>& uart_handle_wq(struct uart_handle* handle)
 
 // templated coroutine definitions moved to header
 
-UartManager::~UartManager()
+void UartManager::release()
 {
     if (handle_) {
         ::uart_handle_get(handle_).release();
         handle_ = nullptr;
     }
+}
+
+UartManager::~UartManager()
+{
+    release();
 }

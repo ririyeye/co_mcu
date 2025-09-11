@@ -34,23 +34,24 @@ struct SpiManager {
 public:
     SpiManager() : handle_(nullptr) { }
     ~SpiManager();
+    void release(); // 主动释放（等价析构内部逻辑）
     // 可自定义协程帧分配器 Alloc（默认 sys_taskalloc）
     template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> init(uint32_t mode);
+    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire(uint32_t mode);
     // SPI 全双工/半双工传输，tx_buff 或 rx_buff 可为 nullptr
     template <typename Alloc = co_wq::sys_taskalloc>
     co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc>
     transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit);
 
     // ---- Awaiters ----
-    struct InitAwaiter {
+    struct AcquireAwaiter {
         SpiManager& self;
         uint32_t    mode;
         spi_handle* tmp_handle { nullptr };
         bool        result { false };
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
-        InitAwaiter(SpiManager& s, uint32_t m) : self(s), mode(m) { }
+        AcquireAwaiter(SpiManager& s, uint32_t m) : self(s), mode(m) { }
         bool await_ready()
         {
             if (self.handle_) { // 已初始化（保持原逻辑：不重新配置）
@@ -88,7 +89,7 @@ public:
             return result;
         }
     };
-    InitAwaiter init_await(uint32_t mode) { return InitAwaiter(*this, mode); }
+    AcquireAwaiter acquire_await(uint32_t mode) { return AcquireAwaiter(*this, mode); }
     static_assert(std::is_trivially_destructible_v<SemAwaiter>, "SemReqAwaiter must remain trivially destructible");
 
     struct TransferAwaiter {
@@ -152,11 +153,11 @@ private:
 
 // ============== 模板实现 ==============
 
-// 初始化 SPI（仅第一次真正配置硬件）；若已初始化直接返回 true。
+// acquire SPI（仅第一次真正配置硬件）；若已获取则直接返回 true。
 template <typename Alloc>
-co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> SpiManager::init(uint32_t mode)
+co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> SpiManager::acquire(uint32_t mode)
 {
-    co_return co_await init_await(mode);
+    co_return co_await acquire_await(mode);
 }
 
 // SPI 传输：根据 ctrl_bit 控制片选/回调行为（保持原逻辑）。

@@ -13,12 +13,12 @@ struct UartManager {
 public:
     explicit UartManager(int uart_num) : uart_num_(uart_num), handle_(nullptr) { }
     ~UartManager();
-    // 初始化指定编号 UART，首次调用会真正配置硬件；再次调用直接返回 true。
-    // 支持自定义协程帧分配器 Alloc（默认使用 sys_taskalloc）
+    void release();
+    // acquire 指定编号 UART（首次真正配置），再次调用直接返回 true。
     template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> init();
+    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire();
     // 轻量 awaiter（包装内部 SemReqAwaiter，复用其逻辑，避免重复代码）
-    struct InitAwaiter {
+    struct AcquireAwaiter {
         UartManager& self;
         uart_handle* tmp_handle { nullptr };
         bool         result { false };
@@ -26,7 +26,7 @@ public:
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
 
-        explicit InitAwaiter(UartManager& u) : self(u) { }
+        explicit AcquireAwaiter(UartManager& u) : self(u) { }
 
         bool await_ready()
         {
@@ -56,7 +56,7 @@ public:
             return result;
         }
     };
-    InitAwaiter init_await() { return InitAwaiter(*this); }
+    AcquireAwaiter acquire_await() { return AcquireAwaiter(*this); }
     // 防御：如果以后 SemReqAwaiter 变为非平凡析构，需要同步调整 InitAwaiter 析构。
     static_assert(std::is_trivially_destructible_v<SemAwaiter>, "SemReqAwaiter must remain trivially destructible");
     // 异步收发：
@@ -129,10 +129,9 @@ private:
 
 // ---- template implementations ----
 
-template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UartManager::init()
+template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UartManager::acquire()
 {
-    // 复用 InitAwaiter 统一逻辑（已初始化 / 句柄获取失败 / 互斥等待）
-    co_return co_await init_await();
+    co_return co_await acquire_await();
 }
 
 template <typename Alloc>

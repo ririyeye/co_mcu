@@ -239,10 +239,15 @@ usb_dev* cdc_usr_dev(struct cdc_usr* h)
     return h->udev;
 }
 
-UsbCDCManager::~UsbCDCManager()
+void UsbCDCManager::release()
 {
     if (handle_) {
         handle_->sem.release();
         handle_ = nullptr;
     }
+}
+
+UsbCDCManager::~UsbCDCManager()
+{
+    release();
 }
