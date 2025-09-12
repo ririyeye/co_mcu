@@ -1,3 +1,4 @@
+#pragma once
 #include "co_spi_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
@@ -35,6 +36,15 @@ public:
     SpiManager() : handle_(nullptr) { }
     ~SpiManager();
     void release(); // 主动释放（等价析构内部逻辑）
+    // 访问底层原始 spi_handle（只读/高级配置用）
+    spi_handle* raw_handle() const { return handle_; }
+    // 设置 dummy byte（在部分 Flash 等设备读操作需要特定 dummy）
+    void set_dummy(uint8_t b)
+    {
+        if (handle_) {
+            spi_ext_set_sp_dummy_byte(handle_, b);
+        }
+    }
     // 可自定义协程帧分配器 Alloc（默认 sys_taskalloc）
     template <typename Alloc = co_wq::sys_taskalloc>
     co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire(uint32_t mode);
