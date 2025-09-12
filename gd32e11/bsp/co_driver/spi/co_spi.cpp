@@ -262,7 +262,7 @@ extern "C" void DMA0_Channel2_IRQHandler(void)
     spi_dma_cpl_cb(&spi_ext_0, HARDWARE_TX);
 }
 
-static void spi_transfer_setup_nolock(struct spi_handle& phandle, spi_session& psess)
+static void spi_enqueue_session_nolock(struct spi_handle& phandle, spi_session& psess)
 {
     int emptyflg = 0;
     if (list_empty(&phandle.list_work)) {
@@ -276,10 +276,10 @@ static void spi_transfer_setup_nolock(struct spi_handle& phandle, spi_session& p
     }
 }
 
-void spi_transfer_setup(struct spi_handle& phandle, spi_session& psess)
+void spi_enqueue_session(struct spi_handle& phandle, spi_session& psess)
 {
     uint32_t lk = lock_acquire();
-    spi_transfer_setup_nolock(phandle, psess);
+    spi_enqueue_session_nolock(phandle, psess);
     lock_release(lk);
 }
 

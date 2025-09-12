@@ -31,7 +31,7 @@ public:
 
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(UartManager& uart, void* buff, int len)
 {
-    co_await uart.transfer_await(reinterpret_cast<uint8_t*>(buff), len, 1);
+    co_await uart.transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
 
     co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
 
@@ -64,7 +64,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
     }
     while (1) {
         const char hello[] = "hello world\r\n";
-        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
+        co_await cdc.transfer(reinterpret_cast<uint8_t*>(const_cast<char*>(hello)), sizeof(hello), 1);
         co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
     co_return;
@@ -73,8 +73,8 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
-        int recvlen = co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), len, 0);
-        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), recvlen, 1);
+        int recvlen = co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
+        co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), recvlen, 1);
     }
     co_return;
 }
@@ -100,13 +100,13 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> spi_task()
 {
     auto     spi  = SpiManager();
     uint32_t mode = spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1;
-    bool     succ = co_await spi.acquire(mode);
+    bool     succ = co_await spi.acquire_await(mode);
     if (!succ) {
         co_return;
     }
     while (1) {
         char testpp[] = "123456";
-        co_await spi.transfer_await(reinterpret_cast<uint8_t*>(testpp), nullptr, 6, 0);
+        co_await spi.transfer(reinterpret_cast<uint8_t*>(testpp), nullptr, 6, 0);
         co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
     co_return;

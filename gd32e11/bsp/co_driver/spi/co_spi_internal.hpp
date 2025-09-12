@@ -2,7 +2,6 @@
 #pragma once
 #include "semaphore.hpp"
 #include "syswork.hpp"
-#include "worker.hpp"
 
 struct spi_handle; // 前向声明
 struct spi_session : co_wq::worknode {
@@ -24,5 +23,5 @@ uint32_t spi_handle_get_mode(struct spi_handle* h);
 void spi_handle_config_mode(struct spi_handle* h, uint32_t mode);
 // 设置 dummy 字节
 void spi_ext_set_sp_dummy_byte(struct spi_handle* phandle, uint8_t dummy_byte);
-// 提交一次传输（在空队列时立即启动）
-void spi_transfer_setup(struct spi_handle& phandle, struct spi_session& psess);
+// 入队一次传输（在空队列时立即启动）
+void spi_enqueue_session(struct spi_handle& phandle, struct spi_session& psess);

@@ -137,7 +137,7 @@ public:
                 auto* psess = static_cast<co_spi_session*>(pws);
                 psess->cpl_inotify.release();
             };
-            spi_transfer_setup(*self.handle_, node);
+            spi_enqueue_session(*self.handle_, node);
             inner = new (inner_storage) SemAwaiter(node.cpl_inotify);
             if (inner->await_ready()) {
                 result_len = static_cast<int>(node.len);
