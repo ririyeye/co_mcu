@@ -9,10 +9,7 @@ extern "C" {
 #include "timer.hpp"
 #include "when_all.hpp"
 
-void usr_tick()
-{
-    get_sys_timer().tick_update();
-}
+void usr_tick() { }
 
 task_stat usr_sta;
 
@@ -44,7 +41,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_task()
 {
     auto uart = UartManager(0);
-    bool succ = co_await uart.init_await();
+    bool succ = co_await uart.acquire();
 
     if (!succ) {
         co_return;
@@ -61,7 +58,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> test_ta
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 {
     auto cdc  = UsbCDCManager();
-    bool succ = co_await cdc.init_await();
+    bool succ = co_await cdc.acquire();
     if (!succ) {
         co_return;
     }
@@ -76,7 +73,8 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
-        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), len, 0);
+        int recvlen = co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), len, 0);
+        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), recvlen, 1);
     }
     co_return;
 }
@@ -84,19 +82,16 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(Us
 #define BLK_CNT 8
 char usb_buff[BLK_CNT][64];
 
-co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_task()
+co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_echo_task()
 {
     auto cdc  = UsbCDCManager();
-    bool succ = co_await cdc.init_await();
+    bool succ = co_await cdc.acquire();
     if (!succ) {
         co_return;
     }
     for (int i = 0; i < BLK_CNT; i++) {
         auto u1 = usb_recv_block_task(cdc, usb_buff[i], sizeof(usb_buff[i]));
         post_to(u1, get_sys_workqueue());
-    }
-    while (1) {
-        co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
     }
     co_return;
 }
@@ -105,7 +100,7 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> spi_task()
 {
     auto     spi  = SpiManager();
     uint32_t mode = spi_is_master_not_slave | spi_is_8bit_not_16bit | spi_is_msb_not_lsb | spi_cp_mode_1;
-    bool     succ = co_await spi.init_await(mode);
+    bool     succ = co_await spi.acquire(mode);
     if (!succ) {
         co_return;
     }
@@ -122,7 +117,7 @@ void usr_init(void)
     auto t = test_task();
     post_to(t, get_sys_workqueue());
 
-    auto usb = usb_recv_task();
+    auto usb = usb_echo_task();
     post_to(usb, get_sys_workqueue());
 
     auto spi = spi_task();

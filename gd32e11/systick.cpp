@@ -1,4 +1,5 @@
 #include "gd32e11x.h"
+#include "syswork.hpp"
 #include <cstdint>
 #include <stdlib.h>
 
@@ -25,6 +26,7 @@ extern "C" void SysTick_Handler(void)
     /* Clear overflow flag */
     SysTick->CTRL;
     total_tick++;
+    get_sys_timer().tick_update();
     usr_tick();
 }
 
