@@ -211,6 +211,16 @@ struct cdc_usr* get_cdc_init(void)
     return &cdc_data;
 }
 
+struct cdc_usr* get_cdc_init_by_num(int num)
+{
+    switch (num) {
+    case 0:
+        return get_cdc_init();
+    default:
+        return nullptr;
+    }
+}
+
 // 模板版本实现已迁移到头文件
 
 // ===== 提供给模板的访问函数 =====

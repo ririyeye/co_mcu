@@ -1,5 +1,9 @@
-// UART 协程管理器接口
-// 提供 init 与 uart_transfer 两个协程接口，支持自定义协程帧分配器 Alloc
+// UART 协程管理器接口 (支持编号获取：uart0 / uart1)
+//  - 构造 UartManager(num) 指定 UART 号，目前实现 0 与 1。
+//  - acquire() 仅首次进行硬件初始化，后续复用。
+//  - set_baudrate()
+//  可在持有互斥下动态重设波特率（简单复位串口寄存器，不影响队列中的会话指针，但调用时应确保无进行中的会话以避免竞态）。
+//  - uart_transfer(): tx=1 发送; tx=0 接收；接收支持 rx_timeout / fast_cb 预留位（当前 fast_cb 未实现回调快速路径）。
 // 使用 intrusive workqueue + 中断驱动完成异步收发。
 #include "co_uart_internal.hpp"
 #include "semaphore.hpp"
@@ -64,6 +68,19 @@ public:
     // 返回实际完成字节数。
     template <typename Alloc = co_wq::sys_taskalloc>
     co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc> uart_transfer(uint8_t* data, size_t len, int tx);
+    // 变更波特率（需已 acquire 成功，内部加互斥）。失败返回负数。
+    int set_baudrate(int baud)
+    {
+        if (!handle_)
+            return -1;
+        auto& sem = ::uart_handle_get(handle_);
+        if (!sem.try_acquire()) {
+            return -2; // busy
+        }
+        int ret = uart_handle_set_baudrate(handle_, baud);
+        sem.release();
+        return ret;
+    }
     // 轻量收发 awaiter（与原实现等价，包装内部 session + SemReqAwaiter 逻辑）
     struct TransferAwaiter {
         UartManager& self;

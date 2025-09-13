@@ -26,3 +26,5 @@ struct uart_handle*            uart_handle_get(int num);
 co_wq::Semaphore<cortex_lock>& uart_handle_get(struct uart_handle* puart);
 int                            uart_ext_transfer_cb(struct uart_handle* handle, struct uart_session& psess);
 co_wq::workqueue<cortex_lock>& uart_handle_wq(struct uart_handle* handle);
+// 动态重新配置波特率（需要已 acquire 并持有互斥）
+int uart_handle_set_baudrate(struct uart_handle* handle, int baud);

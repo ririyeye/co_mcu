@@ -11,8 +11,13 @@ struct spi_session : co_wq::worknode {
     uint32_t       ctrl_bit;
 };
 
-// 获取/初始化 SPI 硬件句柄（若已初始化则直接返回）
-struct spi_handle* spi_handle_get_init();
+// 按编号获取/初始化 SPI（目前仅支持 0）
+struct spi_handle* spi_handle_get_init(int num);
+// 兼容旧接口（等价 num=0）
+static inline struct spi_handle* spi_handle_get_init()
+{
+    return spi_handle_get_init(0);
+}
 // 访问底层工作队列
 co_wq::workqueue<cortex_lock>& spi_handle_wq(struct spi_handle* h);
 // 访问句柄内部信号量

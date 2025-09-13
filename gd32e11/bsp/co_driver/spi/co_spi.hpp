@@ -31,9 +31,13 @@ typedef enum {
 } spi_ctrl_bit;
 
 struct spi_handle;
+// SPI 协程管理器：支持编号构造（目前仅实现 spi0）。
+//  - SpiManager(num) 传入编号，num=0 可用，其它返回 acquire=false。
+//  - acquire(mode) 首次初始化并根据 mode 配置（后续若 mode 不同将自动重新配置）。
+//  - transfer() 支持全双工，tx/rx 缓冲可独立为 nullptr，内部使用 DMA + 工作队列。
 struct SpiManager {
 public:
-    SpiManager() : handle_(nullptr) { }
+    explicit SpiManager(int num = 0) : spi_num_(num), handle_(nullptr) { }
     ~SpiManager();
     void release(); // 主动释放（等价析构内部逻辑）
     // 访问底层原始 spi_handle（只读/高级配置用）
@@ -68,7 +72,7 @@ public:
                 result = true;
                 return true;
             }
-            tmp_handle = spi_handle_get_init();
+            tmp_handle = spi_handle_get_init(self.spi_num_);
             if (!tmp_handle) {
                 result = false;
                 return true;
@@ -158,6 +162,7 @@ public:
     }
 
 private:
+    int         spi_num_ { 0 };
     spi_handle* handle_;
 };
 

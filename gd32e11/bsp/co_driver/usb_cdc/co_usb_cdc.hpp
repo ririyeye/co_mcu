@@ -6,9 +6,13 @@
 using SemAwaiter = co_wq::SemReqAwaiter<cortex_lock>;
 
 struct cdc_usr;
+// USB CDC 协程管理器：支持编号构造（当前仅实现 0）。
+//  - UsbCDCManager(num) 传入编号；num!=0 时 acquire() 将返回 false。
+//  - acquire() 初始化底层 USB CDC 设备（一次）。
+//  - transfer() 异步发送/接收，内部使用队列 + 中断回调唤醒。
 struct UsbCDCManager {
 public:
-    UsbCDCManager() : handle_(nullptr) { }
+    explicit UsbCDCManager(int num = 0) : cdc_num_(num), handle_(nullptr) { }
     ~UsbCDCManager();
     void release();
     // 可自定义协程帧分配器 Alloc
@@ -31,7 +35,7 @@ public:
                 result = true;
                 return true;
             }
-            tmp = get_cdc_init();
+            tmp = get_cdc_init_by_num(self.cdc_num_);
             if (!tmp) {
                 result = false;
                 return true;
@@ -109,6 +113,7 @@ public:
     TransferAwaiter transfer_await(uint8_t* data, size_t len, int tx) { return TransferAwaiter(*this, data, len, tx); }
 
 private:
+    int      cdc_num_ { 0 };
     cdc_usr* handle_;
 };
 

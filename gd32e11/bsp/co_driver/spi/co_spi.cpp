@@ -125,17 +125,18 @@ static void spi_hard_init(const struct spi_hard_info* phard, uint32_t mode)
     nvic_irq_enable(phard->dma[HARDWARE_RX].dma_irq_num, 4U, 0);
 }
 
-struct spi_handle* spi_handle_get_init()
+struct spi_handle* spi_handle_get_init(int num)
 {
-    if (spi_ext_0.is_init) {
+    switch (num) {
+    case 0:
+        if (!spi_ext_0.is_init) {
+            spi_hard_init(&spi_ext_0.mInfo, 0);
+            spi_ext_0.is_init = 1;
+        }
         return &spi_ext_0;
+    default:
+        return nullptr;
     }
-
-    spi_hard_init(&spi_ext_0.mInfo, 0);
-
-    spi_ext_0.is_init = 1;
-
-    return &spi_ext_0;
 }
 
 static void

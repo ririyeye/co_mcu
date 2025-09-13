@@ -17,13 +17,15 @@ struct uart_handle : worknode {
     explicit uart_handle(const struct uart_hard_info* info, workqueue<cortex_lock>& wq)
         : wq_(wq), mInfo(info), sem(wq_, 1, 1)
     {
+        INIT_LIST_HEAD(&list_work_tx);
+        INIT_LIST_HEAD(&list_work_rx);
     }
 
     struct workqueue<cortex_lock>& wq_;
 
     uint32_t is_init : 1;
 
-    int baud_rate = 1152000; // 默认波特率
+    int baud_rate = 115200; // 默认波特率
 
     const struct uart_hard_info* mInfo;
 
@@ -50,6 +52,15 @@ static void uart0_pin_cfg(const struct uart_hard_info* pinfo)
     gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_10);
 }
 
+static void uart1_pin_cfg(const struct uart_hard_info* pinfo)
+{
+    (void)pinfo;
+    rcu_periph_clock_enable(RCU_GPIOA);
+
+    gpio_init(GPIOA, GPIO_MODE_AF_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_2);
+    gpio_init(GPIOA, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_50MHZ, GPIO_PIN_3);
+}
+
 static const struct uart_hard_info hard_u0 = {
     .rcu_uart     = RCU_USART0,
     .uart_periph  = USART0,
@@ -57,7 +68,15 @@ static const struct uart_hard_info hard_u0 = {
     .uart_pin_cfg = uart0_pin_cfg,
 };
 
-struct uart_handle uart_0(&hard_u0, get_sys_workqueue()); // 单实例 UART0
+static const struct uart_hard_info hard_u1 = {
+    .rcu_uart     = RCU_USART1,
+    .uart_periph  = USART1,
+    .uart_irq_num = USART1_IRQn,
+    .uart_pin_cfg = uart1_pin_cfg,
+};
+
+struct uart_handle uart_0(&hard_u0, get_sys_workqueue()); // UART0
+struct uart_handle uart_1(&hard_u1, get_sys_workqueue()); // UART1
 
 // 硬件底层初始化（时钟 / GPIO / USART 配置）
 static void uart_hard_init(const struct uart_hard_info* phard, int baud_rate)
@@ -86,6 +105,14 @@ static struct uart_handle* _uart_ext_handle_require(struct uart_handle* puart)
 
     puart->is_init = 1;
 
+    // 防御性初始化（构造函数已做）
+    if (list_empty(&puart->list_work_tx)) {
+        INIT_LIST_HEAD(&puart->list_work_tx);
+    }
+    if (list_empty(&puart->list_work_rx)) {
+        INIT_LIST_HEAD(&puart->list_work_rx);
+    }
+
     uart_hard_init(puart->mInfo, puart->baud_rate);
 
     return puart;
@@ -98,6 +125,9 @@ struct uart_handle* uart_handle_get(int num)
     switch (num) {
     case 0:
         phandle = _uart_ext_handle_require(&uart_0);
+        break;
+    case 1:
+        phandle = _uart_ext_handle_require(&uart_1);
         break;
 
     default:
@@ -217,6 +247,11 @@ extern "C" void USART0_IRQHandler(void)
     uart_irq_handle(&uart_0);
 }
 
+extern "C" void USART1_IRQHandler(void)
+{
+    uart_irq_handle(&uart_1);
+}
+
 // 启动发送：仅使能发送空中断即可触发循环
 static void uart_setup_tx(struct uart_handle* phandle)
 {
@@ -283,6 +318,22 @@ int uart_ext_transfer_cb(struct uart_handle* handle, uart_session& psess)
 co_wq::workqueue<cortex_lock>& uart_handle_wq(struct uart_handle* handle)
 {
     return handle->wq_;
+}
+
+int uart_handle_set_baudrate(struct uart_handle* handle, int baud)
+{
+    if (!handle) {
+        return -1;
+    }
+    // 需持有外部互斥（由调用方保证）。这里只做最小复位配置以避免影响队列状态。
+    handle->baud_rate = baud;
+    usart_disable(handle->mInfo->uart_periph);
+    usart_deinit(handle->mInfo->uart_periph);
+    usart_baudrate_set(handle->mInfo->uart_periph, baud);
+    usart_receive_config(handle->mInfo->uart_periph, USART_RECEIVE_ENABLE);
+    usart_transmit_config(handle->mInfo->uart_periph, USART_TRANSMIT_ENABLE);
+    usart_enable(handle->mInfo->uart_periph);
+    return 0;
 }
 
 // templated coroutine definitions moved to header

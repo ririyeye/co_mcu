@@ -2,7 +2,6 @@
 #pragma once
 #include "semaphore.hpp"
 #include "syswork.hpp"
-#include "worker.hpp"
 extern "C" {
 typedef struct _usb_core_driver usb_dev; // 与底层 USB 库保持一致的前置声明
 }
@@ -14,8 +13,13 @@ struct cdc_usr_node : co_wq::worknode { // 仅需在模板里继承使用
     uint16_t dat_cur;
 };
 
-// 初始化并返回 CDC 句柄
-struct cdc_usr* get_cdc_init(void);
+// 初始化并返回 CDC 句柄（兼容旧接口）；新增按编号获取接口（当前仅支持 0）
+struct cdc_usr*               get_cdc_init(void);
+struct cdc_usr*               get_cdc_init_by_num(int num);
+static inline struct cdc_usr* get_cdc_init_by_num()
+{
+    return get_cdc_init_by_num(0);
+}
 // 辅助访问函数（避免在模板中访问不完整类型成员）
 co_wq::workqueue<cortex_lock>& cdc_usr_wq(struct cdc_usr* h);
 co_wq::Semaphore<cortex_lock>& cdc_usr_sem(struct cdc_usr* h);
