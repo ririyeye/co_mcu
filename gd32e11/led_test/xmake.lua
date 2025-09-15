@@ -5,7 +5,7 @@ target("led")
 
     add_files(
         "led.cpp"
-        -- , {optimize = "none"}
+        , {optimize = "none"}
     )
     add_ldflags(
         "-Wl,-Map=build/led.map",

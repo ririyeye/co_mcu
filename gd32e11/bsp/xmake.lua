@@ -132,7 +132,7 @@ if has_config("gd32_usb") then
         "co_driver/usb_cdc/co_usb_cdc.cpp",
         "co_driver/usb_cdc/gd32e11x_hw.c",
         "co_driver/usb_cdc/gd32e11x_it.c"
-        -- , {optimize = "none"}
+        , {optimize = "none"}
     )
 
     add_includedirs(

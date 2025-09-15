@@ -49,14 +49,6 @@ public:
             spi_ext_set_sp_dummy_byte(handle_, b);
         }
     }
-    // 可自定义协程帧分配器 Alloc（默认 sys_taskalloc）
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire(uint32_t mode);
-    // SPI 全双工/半双工传输，tx_buff 或 rx_buff 可为 nullptr
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc>
-    transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit);
-
     // ---- Awaiters ----
     struct AcquireAwaiter {
         SpiManager& self;
@@ -165,20 +157,3 @@ private:
     int         spi_num_ { 0 };
     spi_handle* handle_;
 };
-
-// ============== 模板实现 ==============
-
-// acquire SPI（仅第一次真正配置硬件）；若已获取则直接返回 true。
-template <typename Alloc>
-co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> SpiManager::acquire(uint32_t mode)
-{
-    co_return co_await acquire_await(mode);
-}
-
-// SPI 传输：根据 ctrl_bit 控制片选/回调行为（保持原逻辑）。
-template <typename Alloc>
-co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc>
-SpiManager::transfer(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
-{
-    co_return co_await transfer_await(tx_buff, rx_buff, len, ctrl_bit);
-}

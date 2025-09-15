@@ -9,8 +9,9 @@ ENTRY(Reset_Handler)
 
 SECTIONS
 {
-  __stack_size = DEFINED(__stack_size) ? __stack_size : 1024;
-  _Min_Heap_Size = DEFINED(_Min_Heap_Size) ? _Min_Heap_Size : 20480;
+  __stack_size = DEFINED(__stack_size) ? __stack_size : 2048
+  ;
+  _Min_Heap_Size = DEFINED(_Min_Heap_Size) ? _Min_Heap_Size : 20000;
 /* ISR vectors */
   .vectors :
   {

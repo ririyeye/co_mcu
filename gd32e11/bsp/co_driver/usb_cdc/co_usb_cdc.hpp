@@ -16,13 +16,6 @@ public:
     explicit UsbCDCManager(int num = 0) : cdc_num_(num), handle_(nullptr) { }
     ~UsbCDCManager();
     void release();
-    // 可自定义协程帧分配器 Alloc
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire();
-    // tx=1 发送; tx=0 接收（阻塞等待满或数据到来即完成）
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc> transfer(uint8_t* data, size_t len, int tx);
-
     struct AcquireAwaiter {
         UsbCDCManager& self;
         cdc_usr*       tmp { nullptr };
@@ -117,19 +110,3 @@ private:
     int      cdc_num_ { 0 };
     cdc_usr* handle_;
 };
-
-// ============== 模板实现 ==============
-
-// 初始化 USB CDC 设备（只初始化一次）
-template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UsbCDCManager::acquire()
-{
-    co_return co_await acquire_await();
-}
-
-// USB CDC 传输/接收
-template <typename Alloc>
-co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc>
-UsbCDCManager::transfer(uint8_t* data, size_t len, int tx)
-{
-    co_return co_await transfer_await(data, len, tx);
-}

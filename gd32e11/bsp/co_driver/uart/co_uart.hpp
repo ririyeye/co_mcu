@@ -19,10 +19,7 @@ public:
     explicit UartManager(int uart_num) : uart_num_(uart_num), handle_(nullptr) { }
     ~UartManager();
     void release();
-    // acquire 指定编号 UART（首次真正配置），再次调用直接返回 true。
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> acquire();
-    // 轻量 awaiter（包装内部 SemReqAwaiter，复用其逻辑，避免重复代码）
+
     struct AcquireAwaiter {
         UartManager& self;
         uart_handle* tmp_handle { nullptr };
@@ -64,11 +61,6 @@ public:
     AcquireAwaiter acquire_await() { return AcquireAwaiter(*this); }
     // 防御：如果以后 SemReqAwaiter 变为非平凡析构，需要同步调整 InitAwaiter 析构。
     static_assert(std::is_trivially_destructible_v<SemAwaiter>, "SemReqAwaiter must remain trivially destructible");
-    // 异步收发：
-    //   tx=1 发送 data[len]；tx=0 接收 data[len]（阻塞直到接满或超时触发完成）
-    // 返回实际完成字节数。
-    template <typename Alloc = co_wq::sys_taskalloc>
-    co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc> uart_transfer(uint8_t* data, size_t len, int tx);
     // 变更波特率（需已 acquire 成功，内部加互斥）。失败返回负数。
     int set_baudrate(int baud)
     {
@@ -144,17 +136,3 @@ private:
     int          uart_num_;
     uart_handle* handle_; // 获取后保持，析构时释放其互斥信号量
 };
-
-// ---- template implementations ----
-
-template <typename Alloc> co_wq::Task<bool, co_wq::Work_Promise<cortex_lock, bool>, Alloc> UartManager::acquire()
-{
-    co_return co_await acquire_await();
-}
-
-template <typename Alloc>
-co_wq::Task<int, co_wq::Work_Promise<cortex_lock, int>, Alloc>
-UartManager::uart_transfer(uint8_t* data, size_t len, int tx)
-{
-    co_return co_await transfer_await(data, len, tx);
-}

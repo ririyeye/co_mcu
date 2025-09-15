@@ -31,7 +31,7 @@ public:
 
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>, usr_taskalloc> u_send(UartManager& uart, void* buff, int len)
 {
-    co_await uart.transfer(reinterpret_cast<uint8_t*>(buff), len, 1);
+    co_await uart.transfer_await(reinterpret_cast<uint8_t*>(buff), len, 1);
 
     co_await co_wq::DelayAwaiter(get_sys_timer(), 1000);
 
@@ -73,8 +73,8 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_task()
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(UsbCDCManager& cdc, char* pdata, int len)
 {
     while (1) {
-        int recvlen = co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), len, 0);
-        co_await cdc.transfer(reinterpret_cast<uint8_t*>(pdata), recvlen, 1);
+        int recvlen = co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), len, 0);
+        co_await cdc.transfer_await(reinterpret_cast<uint8_t*>(pdata), recvlen, 1);
     }
     co_return;
 }
@@ -82,10 +82,10 @@ co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_recv_block_task(Us
 #define BLK_CNT 8
 char usb_buff[BLK_CNT][64];
 
+auto cdc  = UsbCDCManager();
 co_wq::Task<void, co_wq::Work_Promise<cortex_lock, void>> usb_echo_task()
 {
-    auto cdc  = UsbCDCManager();
-    bool succ = co_await cdc.acquire();
+    bool succ = co_await cdc.acquire_await();
     if (!succ) {
         co_return;
     }
