@@ -1,0 +1,3 @@
+[submodule "co_wq"]
+	path = co_wq
+	url = https://github.com/ririyeye/co_wq.git

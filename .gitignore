@@ -7,4 +7,3 @@ install
 .vscode/settings.json
 *.bin
 *.pyc
-co_wq
