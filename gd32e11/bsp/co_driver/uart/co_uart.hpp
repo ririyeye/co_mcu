@@ -5,6 +5,7 @@
 //  可在持有互斥下动态重设波特率（简单复位串口寄存器，不影响队列中的会话指针，但调用时应确保无进行中的会话以避免竞态）。
 //  - uart_transfer(): tx=1 发送; tx=0 接收；接收支持 rx_timeout / fast_cb 预留位（当前 fast_cb 未实现回调快速路径）。
 // 使用 intrusive workqueue + 中断驱动完成异步收发。
+#pragma once
 #include "co_uart_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
