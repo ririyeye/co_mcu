@@ -2,7 +2,6 @@
 #include "co_spi_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
-#include "worker.hpp"
 
 using SemAwaiter = co_wq::SemReqAwaiter<cortex_lock>;
 
@@ -99,13 +98,17 @@ public:
     AcquireAwaiter acquire_await(uint32_t mode) { return AcquireAwaiter(*this, mode); }
     static_assert(std::is_trivially_destructible_v<SemAwaiter>, "SemReqAwaiter must remain trivially destructible");
 
-    struct TransferAwaiter {
-        SpiManager&    self;
-        const uint8_t* tx_buff;
-        const uint8_t* rx_buff;
-        size_t         len;
-        uint32_t       ctrl_bit;
-        int            result_len { 0 };
+    // 统一的传输 Awaiter（模板）：N 段，N=1 时等价单次传输。
+    // 规则：若 ctrl 含有 spi_cs_not_set_at_half，则对所有非最后一段额外 OR 上 spi_cs_not_set_at_end，
+    // 从而保证多段期间 CS 保持不抬高，直到最后一段按 ctrl 处理。
+    template <int N = 2> struct TransferAwaiter {
+        SpiManager& self;
+        // 内部持有一份拷贝，避免包装函数中局部数组生命周期问题
+        const uint8_t* txs[N];
+        const uint8_t* rxs[N];
+        size_t         lens[N];
+        uint32_t       ctrl;             // 单一 ctrl_bit，内部按段规则分配
+        int            result_len { 0 }; // 返回最后一段完成长度
         struct co_spi_session : spi_session {
             explicit co_spi_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
             {
@@ -113,12 +116,18 @@ public:
             }
             co_wq::Semaphore<cortex_lock> cpl_inotify;
         };
-        co_spi_session node;
+        alignas(co_spi_session) unsigned char nodes_storage[sizeof(co_spi_session) * N];
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
-        TransferAwaiter(SpiManager& s, const uint8_t* tx, const uint8_t* rx, size_t l, uint32_t cb)
-            : self(s), tx_buff(tx), rx_buff(rx), len(l), ctrl_bit(cb), node(spi_handle_wq(s.handle_))
+        TransferAwaiter(SpiManager& s, const uint8_t* (&t)[N], const uint8_t* (&r)[N], size_t (&l)[N], uint32_t c)
+            : self(s), ctrl(c)
         {
+            for (int i = 0; i < N; ++i) {
+                txs[i]  = t[i];
+                rxs[i]  = r[i];
+                lens[i] = l[i];
+                new (&nodes_ptr()[i]) co_spi_session(spi_handle_wq(self.handle_));
+            }
         }
         bool await_ready()
         {
@@ -126,18 +135,32 @@ public:
                 result_len = 0;
                 return true;
             }
-            node.tx_buf   = tx_buff;
-            node.rx_buf   = rx_buff;
-            node.len      = len;
-            node.ctrl_bit = ctrl_bit;
-            node.func     = [](co_wq::worknode* pws) {
+            const bool use_at_half = (ctrl & spi_cs_not_set_at_half) != 0;
+            for (int i = 0; i < N; ++i) {
+                auto& node    = nodes_ptr()[i];
+                node.tx_buf   = txs[i];
+                node.rx_buf   = rxs[i];
+                node.len      = lens[i];
+                node.ctrl_bit = ctrl;
+                if (use_at_half && i < (N - 1)) {
+                    node.ctrl_bit |= spi_cs_not_set_at_end; // 非最后一段强制不在段末置 CS
+                }
+                node.func = nullptr;
+            }
+            // 最后一段负责唤醒
+            nodes_ptr()[N - 1].func = [](co_wq::worknode* pws) {
                 auto* psess = static_cast<co_spi_session*>(pws);
                 psess->cpl_inotify.release();
             };
-            spi_enqueue_session(*self.handle_, node);
-            inner = new (inner_storage) SemAwaiter(node.cpl_inotify);
+
+            // 入队所有段
+            for (int i = 0; i < N; ++i) {
+                spi_enqueue_session(*self.handle_, nodes_ptr()[i]);
+            }
+
+            inner = new (inner_storage) SemAwaiter(nodes_ptr()[N - 1].cpl_inotify);
             if (inner->await_ready()) {
-                result_len = static_cast<int>(node.len);
+                result_len = static_cast<int>(nodes_ptr()[N - 1].len);
                 return true;
             }
             return false;
@@ -145,13 +168,29 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         int  await_resume()
         {
-            result_len = static_cast<int>(node.len);
+            result_len = static_cast<int>(nodes_ptr()[N - 1].len);
             return result_len;
         }
+
+    private:
+        inline co_spi_session* nodes_ptr() { return reinterpret_cast<co_spi_session*>(nodes_storage); }
     };
-    TransferAwaiter transfer_await(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
+
+    // 单段传输便捷接口：通过模板 N=1 复用统一实现。
+    TransferAwaiter<1> transfer_await(const uint8_t* tx_buff, const uint8_t* rx_buff, size_t len, uint32_t ctrl_bit)
     {
-        return TransferAwaiter(*this, tx_buff, rx_buff, len, ctrl_bit);
+        const uint8_t* txs[1]  = { tx_buff };
+        const uint8_t* rxs[1]  = { rx_buff };
+        size_t         lens[1] = { len };
+        return TransferAwaiter<1>(*this, txs, rxs, lens, ctrl_bit);
+    }
+
+    // 多段传输接口：返回统一的模板 Awaiter
+    template <int N = 2>
+    TransferAwaiter<N>
+    transfer_multi_await(const uint8_t* (&txs)[N], const uint8_t* (&rxs)[N], size_t (&lens)[N], uint32_t ctrl_bit)
+    {
+        return TransferAwaiter<N>(*this, txs, rxs, lens, ctrl_bit);
     }
 
 private:

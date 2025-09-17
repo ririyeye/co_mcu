@@ -73,12 +73,14 @@ public:
     AcquireAwaiter acquire_await(uint8_t addr7, uint32_t clock_hz) { return AcquireAwaiter(*this, addr7, clock_hz); }
     static_assert(std::is_trivially_destructible_v<I2cSemAwaiter>, "SemReqAwaiter must remain trivially destructible");
 
-    struct TransferAwaiter {
+    // 统一的传输 Awaiter（模板）：N 段，N=1 时等价单次传输。
+    template <int N = 2> struct TransferAwaiter {
         I2cManager& self;
-        uint8_t*    buf;
-        size_t      len;
-        uint32_t    ctrl_bit; // i2c_start_i2c | i2c_end_i2c | i2c_tx_not_rx
-        int         result_len { 0 };
+        // 内部持有数组拷贝，避免包装函数中局部数组悬垂
+        uint8_t* bufs[N];
+        size_t   lens[N];
+        uint32_t ctrls[N];         // 每段独立 ctrl
+        int      result_len { 0 }; // 返回最后一段的完成长度
         struct co_i2c_session : i2c_session {
             explicit co_i2c_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
             {
@@ -86,71 +88,16 @@ public:
             }
             co_wq::Semaphore<cortex_lock> cpl_inotify;
         };
-        co_i2c_session node;
+        alignas(co_i2c_session) unsigned char nodes_storage[sizeof(co_i2c_session) * N];
         alignas(I2cSemAwaiter) unsigned char inner_storage[sizeof(I2cSemAwaiter)];
         I2cSemAwaiter* inner { nullptr };
-        TransferAwaiter(I2cManager& s, uint8_t* b, size_t l, uint32_t cb)
-            : self(s), buf(b), len(l), ctrl_bit(cb), node(i2c_handle_wq(s.handle_))
+        TransferAwaiter(I2cManager& s, uint8_t* (&b)[N], size_t (&l)[N], uint32_t (&c)[N]) : self(s)
         {
-        }
-        bool await_ready()
-        {
-            if (!self.handle_) {
-                result_len = 0;
-                return true;
-            }
-            node.buf       = buf;
-            node.trans_max = static_cast<uint32_t>(len);
-            node.trans_len = 0;
-            node.len       = 0;
-            node.ctrl_bit  = ctrl_bit;
-            node.func      = [](co_wq::worknode* pws) {
-                auto* psess = static_cast<co_i2c_session*>(pws);
-                psess->cpl_inotify.release();
-            };
-            i2c_enqueue_session(*self.handle_, node);
-            inner = new (inner_storage) I2cSemAwaiter(node.cpl_inotify);
-            if (inner->await_ready()) {
-                result_len = static_cast<int>(node.len);
-                return true;
-            }
-            return false;
-        }
-        void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
-        int  await_resume()
-        {
-            result_len = static_cast<int>(node.len);
-            return result_len;
-        }
-    };
-    TransferAwaiter transfer_await(uint8_t* buf, size_t len, uint32_t ctrl_bit)
-    {
-        return TransferAwaiter(*this, buf, len, ctrl_bit);
-    }
-
-    // 多段传输（模板）：N 为段数，默认 2。传参使用 C 数组引用，调用简洁且零开销。
-    template <int N = 2> struct MultiTransferAwaiter {
-        I2cManager& self;
-        uint8_t* (&bufs)[N];
-        size_t (&lens)[N];
-        uint32_t (&ctrls)[N];
-        int result_len { 0 }; // 返回最后一段的完成长度
-        struct co_i2c_session : i2c_session {
-            explicit co_i2c_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
-            {
-                INIT_LIST_HEAD(&ws_node);
-            }
-            co_wq::Semaphore<cortex_lock> cpl_inotify;
-        };
-        co_i2c_session nodes[N] = { co_i2c_session(i2c_handle_wq(self.handle_)) };
-        alignas(I2cSemAwaiter) unsigned char inner_storage[sizeof(I2cSemAwaiter)];
-        I2cSemAwaiter* inner { nullptr };
-        MultiTransferAwaiter(I2cManager& s, uint8_t* (&b)[N], size_t (&l)[N], uint32_t (&c)[N])
-            : self(s), bufs(b), lens(l), ctrls(c)
-        {
-            // nodes[0] 已构造，剩余用就地构造
-            for (int i = 1; i < N; ++i) {
-                new (&nodes[i]) co_i2c_session(i2c_handle_wq(self.handle_));
+            for (int i = 0; i < N; ++i) {
+                bufs[i]  = b[i];
+                lens[i]  = l[i];
+                ctrls[i] = c[i];
+                new (&nodes_ptr()[i]) co_i2c_session(i2c_handle_wq(self.handle_));
             }
         }
         bool await_ready()
@@ -161,7 +108,7 @@ public:
             }
             // 准备所有段，最后一段安装回调以唤醒
             for (int i = 0; i < N; ++i) {
-                auto& node     = nodes[i];
+                auto& node     = nodes_ptr()[i];
                 node.buf       = bufs[i];
                 node.trans_max = static_cast<uint32_t>(lens[i]);
                 node.trans_len = 0;
@@ -169,19 +116,19 @@ public:
                 node.ctrl_bit  = ctrls[i];
                 node.func      = nullptr;
             }
-            nodes[N - 1].func = [](co_wq::worknode* pws) {
+            nodes_ptr()[N - 1].func = [](co_wq::worknode* pws) {
                 auto* psess = static_cast<co_i2c_session*>(pws);
                 psess->cpl_inotify.release();
             };
 
             // 逐段入队，启动传输
             for (int i = 0; i < N; ++i) {
-                i2c_enqueue_session(*self.handle_, nodes[i]);
+                i2c_enqueue_session(*self.handle_, nodes_ptr()[i]);
             }
 
-            inner = new (inner_storage) I2cSemAwaiter(nodes[N - 1].cpl_inotify);
+            inner = new (inner_storage) I2cSemAwaiter(nodes_ptr()[N - 1].cpl_inotify);
             if (inner->await_ready()) {
-                result_len = static_cast<int>(nodes[N - 1].len);
+                result_len = static_cast<int>(nodes_ptr()[N - 1].len);
                 return true;
             }
             return false;
@@ -189,15 +136,28 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         int  await_resume()
         {
-            result_len = static_cast<int>(nodes[N - 1].len);
+            result_len = static_cast<int>(nodes_ptr()[N - 1].len);
             return result_len;
         }
+
+    private:
+        inline co_i2c_session* nodes_ptr() { return reinterpret_cast<co_i2c_session*>(nodes_storage); }
     };
 
-    template <int N = 2>
-    MultiTransferAwaiter<N> transfer_multi_await(uint8_t* (&bufs)[N], size_t (&lens)[N], uint32_t (&ctrl_bits)[N])
+    // 单段传输：通过模板 N=1 复用统一实现
+    TransferAwaiter<1> transfer_await(uint8_t* buf, size_t len, uint32_t ctrl_bit)
     {
-        return MultiTransferAwaiter<N>(*this, bufs, lens, ctrl_bits);
+        uint8_t* bufs[1]  = { buf };
+        size_t   lens[1]  = { len };
+        uint32_t ctrls[1] = { ctrl_bit };
+        return TransferAwaiter<1>(*this, bufs, lens, ctrls);
+    }
+
+    // 多段传输接口：返回统一模板类型
+    template <int N = 2>
+    TransferAwaiter<N> transfer_multi_await(uint8_t* (&bufs)[N], size_t (&lens)[N], uint32_t (&ctrl_bits)[N])
+    {
+        return TransferAwaiter<N>(*this, bufs, lens, ctrl_bits);
     }
 
 private:

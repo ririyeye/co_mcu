@@ -9,7 +9,6 @@
 #include "co_uart_internal.hpp"
 #include "semaphore.hpp"
 #include "syswork.hpp"
-#include "worker.hpp"
 
 using SemAwaiter = co_wq::SemReqAwaiter<cortex_lock>;
 
@@ -77,13 +76,14 @@ public:
         sem.release();
         return ret;
     }
-    // 轻量收发 awaiter（与原实现等价，包装内部 session + SemReqAwaiter 逻辑）
-    struct TransferAwaiter {
+    // 统一模板收发 awaiter：N 段，N=1 等价单次
+    template <int N = 2> struct TransferAwaiter {
         UartManager& self;
-        uint8_t*     data;
-        size_t       len;
-        int          tx;
-        int          result_len { 0 };
+        // 内部持有数组拷贝，避免包装函数中局部数组悬垂
+        uint8_t* datas[N];
+        size_t   lens[N];
+        int      txs[N];
+        int      result_len { 0 };
 
         struct tx_uart_session : uart_session {
             explicit tx_uart_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
@@ -93,35 +93,46 @@ public:
             co_wq::Semaphore<cortex_lock> cpl_inotify; // 完成通知
         };
 
-        // 延迟构造 session 需要 wq，直接在构造函数里用 self.handle_（假定已 init）。
-        tx_uart_session node;
-
+        alignas(tx_uart_session) unsigned char nodes_storage[sizeof(tx_uart_session) * N];
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
 
-        TransferAwaiter(UartManager& u, uint8_t* d, size_t l, int t)
-            : self(u), data(d), len(l), tx(t), node(uart_handle_wq(u.handle_))
+        TransferAwaiter(UartManager& u, uint8_t* (&d)[N], size_t (&l)[N], int (&t)[N]) : self(u)
         {
+            for (int i = 0; i < N; ++i) {
+                datas[i] = d[i];
+                lens[i]  = l[i];
+                txs[i]   = t[i];
+                new (&nodes_ptr()[i]) tx_uart_session(uart_handle_wq(self.handle_));
+            }
         }
 
         bool await_ready()
         {
-            if (!self.handle_) { // 未初始化：与原实现不同，这里直接返回 0；假定调用方应先 init。
+            if (!self.handle_) { // 未初始化
                 result_len = 0;
                 return true;
             }
-            node.buff          = data;
-            node.len           = len;
-            node.cur_len       = 0;
-            node.flg.tx_not_rx = !!tx;
-            node.func          = [](co_wq::worknode* pws) {
+            for (int i = 0; i < N; ++i) {
+                auto& node         = nodes_ptr()[i];
+                node.buff          = datas[i];
+                node.len           = lens[i];
+                node.cur_len       = 0;
+                node.flg.tx_not_rx = !!txs[i];
+                node.func          = nullptr;
+            }
+            // 最后一段回调唤醒
+            nodes_ptr()[N - 1].func = [](co_wq::worknode* pws) {
                 auto* psess = static_cast<tx_uart_session*>(pws);
                 psess->cpl_inotify.release();
             };
-            uart_ext_transfer_cb(self.handle_, node); // 提交
-            inner = new (inner_storage) SemAwaiter(node.cpl_inotify);
+            // 依次提交
+            for (int i = 0; i < N; ++i) {
+                uart_ext_transfer_cb(self.handle_, nodes_ptr()[i]);
+            }
+            inner = new (inner_storage) SemAwaiter(nodes_ptr()[N - 1].cpl_inotify);
             if (inner->await_ready()) { // 立即完成
-                result_len = node.cur_len;
+                result_len = nodes_ptr()[N - 1].cur_len;
                 return true;
             }
             return false;
@@ -129,11 +140,28 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         int  await_resume()
         {
-            result_len = node.cur_len;
+            result_len = nodes_ptr()[N - 1].cur_len;
             return result_len;
         }
+
+    private:
+        inline tx_uart_session* nodes_ptr() { return reinterpret_cast<tx_uart_session*>(nodes_storage); }
     };
-    TransferAwaiter transfer_await(uint8_t* data, size_t len, int tx) { return TransferAwaiter(*this, data, len, tx); }
+
+    // 单段传输便捷接口
+    TransferAwaiter<1> transfer_await(uint8_t* data, size_t len, int tx)
+    {
+        uint8_t* datas[1] = { data };
+        size_t   lens[1]  = { len };
+        int      txs[1]   = { tx };
+        return TransferAwaiter<1>(*this, datas, lens, txs);
+    }
+
+    // 多段传输接口
+    template <int N = 2> TransferAwaiter<N> transfer_multi_await(uint8_t* (&datas)[N], size_t (&lens)[N], int (&txs)[N])
+    {
+        return TransferAwaiter<N>(*this, datas, lens, txs);
+    }
 
 private:
     int          uart_num_;
