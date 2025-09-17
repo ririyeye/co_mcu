@@ -84,11 +84,12 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         bool await_resume()
         {
-            self.handle_ = tmp_handle;
-            if (self.handle_ && mode != spi_handle_get_mode(self.handle_)) {
-                spi_handle_config_mode(self.handle_, mode);
-            }
-            if (self.handle_) {
+            // 仅当当前尚未持有句柄且本次确实获取到句柄时，才进行赋值与配置。
+            if (!self.handle_ && tmp_handle) {
+                self.handle_ = tmp_handle;
+                if (mode != spi_handle_get_mode(self.handle_)) {
+                    spi_handle_config_mode(self.handle_, mode);
+                }
                 spi_ext_set_sp_dummy_byte(self.handle_, 0xff);
             }
             result = (self.handle_ != nullptr);

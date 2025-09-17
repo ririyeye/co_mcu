@@ -53,8 +53,11 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         bool await_resume()
         {
-            self.handle_ = tmp_handle; // 信号量获取成功
-            result       = (self.handle_ != nullptr);
+            // 仅在尚未持有句柄时进行赋值，避免并发情况下无意义覆盖。
+            if (!self.handle_ && tmp_handle) {
+                self.handle_ = tmp_handle; // 信号量获取成功
+            }
+            result = (self.handle_ != nullptr);
             return result;
         }
     };

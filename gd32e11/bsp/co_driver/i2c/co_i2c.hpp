@@ -26,6 +26,19 @@ public:
         AcquireAwaiter(I2cManager& s, uint8_t a7, uint32_t hz) : self(s), addr7(a7), clock_hz(hz) { }
         bool await_ready()
         {
+            // 若已持有句柄：直接尝试使用现有句柄的信号量进行快速路径，避免因 get_init 失败导致误返回 false。
+            if (self.handle_) {
+                inner = new (inner_storage) I2cSemAwaiter(i2c_handle_sem(self.handle_));
+                if (inner->await_ready()) {
+                    // 持有情况下允许受保护地重配地址/时钟
+                    i2c_handle_set_addr(self.handle_, addr7);
+                    if (clock_hz)
+                        i2c_handle_set_clock(self.handle_, clock_hz);
+                    result = true;
+                    return true;
+                }
+                return false;
+            }
             tmp_handle = i2c_handle_get_init(self.i2c_num_);
             if (!tmp_handle) {
                 result = false;
@@ -45,7 +58,9 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         bool await_resume()
         {
-            self.handle_ = tmp_handle;
+            if (!self.handle_ && tmp_handle) {
+                self.handle_ = tmp_handle;
+            }
             if (self.handle_) {
                 i2c_handle_set_addr(self.handle_, addr7);
                 if (clock_hz)

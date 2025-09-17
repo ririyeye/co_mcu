@@ -45,8 +45,10 @@ public:
         void await_suspend(std::coroutine_handle<> h) { inner->await_suspend(h); }
         bool await_resume()
         {
-            self.handle_ = tmp;
-            result       = (self.handle_ != nullptr);
+            if (!self.handle_ && tmp) {
+                self.handle_ = tmp;
+            }
+            result = (self.handle_ != nullptr);
             return result;
         }
     };
