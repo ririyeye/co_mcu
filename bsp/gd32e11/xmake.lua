@@ -103,6 +103,7 @@ if has_config("gd32_usb") then
         "Firmware/GD32E11x_usbfs_library/driver/Source/drv_usb_core.c"
     )
     add_includedirs(
+        "../gd32e11/co_driver/usb_cdc/",
         "Firmware/GD32E11x_usbfs_library/ustd/common",
         "Firmware/GD32E11x_usbfs_library/ustd/class/cdc",
         "Firmware/GD32E11x_usbfs_library/driver/Include",
@@ -123,10 +124,6 @@ if has_config("gd32_uart") then
         "co_driver/uart/co_uart.cpp"
         -- , {optimize = "none"}
     )
-
-    add_includedirs(
-        "co_driver/uart", {public=true}
-    )
 end
 
 if has_config("gd32_spi") then
@@ -134,10 +131,6 @@ if has_config("gd32_spi") then
     add_files(
         "co_driver/spi/co_spi.cpp"
         -- , {optimize = "none"}
-    )
-
-    add_includedirs(
-        "co_driver/spi", {public=true}
     )
 end
 
@@ -149,10 +142,6 @@ if has_config("gd32_usb") then
         "co_driver/usb_cdc/gd32e11x_it.c"
         -- , {optimize = "none"}
     )
-
-    add_includedirs(
-        "co_driver/usb_cdc", {public=true}
-    )
 end
 
 -- i2c (受开关控制)
@@ -161,10 +150,6 @@ if has_config("gd32_i2c") then
         "co_driver/i2c/co_i2c.cpp"
         -- , {optimize = "none"}
     )
-
-    add_includedirs(
-        "co_driver/i2c", {public=true}
-    )
 end
 
 -- adc (受开关控制)
@@ -172,9 +157,6 @@ if has_config("gd32_adc") then
     add_files(
         "co_driver/adc/co_adc.cpp"
         -- , {optimize = "none"}
-    )
-    add_includedirs(
-        "co_driver/adc", {public=true}
     )
 end
 
