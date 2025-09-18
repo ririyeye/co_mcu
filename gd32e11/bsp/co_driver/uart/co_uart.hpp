@@ -85,25 +85,29 @@ public:
         int      txs[N];
         int      result_len { 0 };
 
-        struct tx_uart_session : uart_session {
-            explicit tx_uart_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
+        struct xfer_uart_session : uart_session {
+            explicit xfer_uart_session(co_wq::workqueue<cortex_lock>& wq) : cpl_inotify(wq, 0, 1)
             {
                 INIT_LIST_HEAD(&ws_node);
             }
             co_wq::Semaphore<cortex_lock> cpl_inotify; // 完成通知
         };
 
-        alignas(tx_uart_session) unsigned char nodes_storage[sizeof(tx_uart_session) * N];
+        alignas(xfer_uart_session) unsigned char nodes_storage[sizeof(xfer_uart_session) * N];
         alignas(SemAwaiter) unsigned char inner_storage[sizeof(SemAwaiter)];
         SemAwaiter* inner { nullptr };
 
-        TransferAwaiter(UartManager& u, uint8_t* (&d)[N], size_t (&l)[N], int (&t)[N]) : self(u)
+        // 统一传入超时（对 RX 段有效；TX 端会被底层忽略）
+        uint8_t timeout_ { 0 };
+
+        TransferAwaiter(UartManager& u, uint8_t* (&d)[N], size_t (&l)[N], int (&t)[N], uint8_t timeout = 0)
+            : self(u), timeout_(timeout)
         {
             for (int i = 0; i < N; ++i) {
                 datas[i] = d[i];
                 lens[i]  = l[i];
                 txs[i]   = t[i];
-                new (&nodes_ptr()[i]) tx_uart_session(uart_handle_wq(self.handle_));
+                new (&nodes_ptr()[i]) xfer_uart_session(uart_handle_wq(self.handle_));
             }
         }
 
@@ -114,16 +118,17 @@ public:
                 return true;
             }
             for (int i = 0; i < N; ++i) {
-                auto& node         = nodes_ptr()[i];
-                node.buff          = datas[i];
-                node.len           = lens[i];
-                node.cur_len       = 0;
-                node.flg.tx_not_rx = !!txs[i];
-                node.func          = nullptr;
+                auto& node          = nodes_ptr()[i];
+                node.buff           = datas[i];
+                node.len            = lens[i];
+                node.cur_len        = 0;
+                node.flg.tx_not_rx  = !!txs[i];
+                node.flg.rx_timeout = timeout_;
+                node.func           = nullptr;
             }
             // 最后一段回调唤醒
             nodes_ptr()[N - 1].func = [](co_wq::worknode* pws) {
-                auto* psess = static_cast<tx_uart_session*>(pws);
+                auto* psess = static_cast<xfer_uart_session*>(pws);
                 psess->cpl_inotify.release();
             };
             // 依次提交
@@ -145,7 +150,7 @@ public:
         }
 
     private:
-        inline tx_uart_session* nodes_ptr() { return reinterpret_cast<tx_uart_session*>(nodes_storage); }
+        inline xfer_uart_session* nodes_ptr() { return reinterpret_cast<xfer_uart_session*>(nodes_storage); }
     };
 
     // 单段传输便捷接口
@@ -157,10 +162,26 @@ public:
         return TransferAwaiter<1>(*this, datas, lens, txs);
     }
 
+    // 带接收超时参数的便捷接口（对 TX 无副作用）
+    TransferAwaiter<1> transfer_await(uint8_t* data, size_t len, int tx, uint8_t timeout)
+    {
+        uint8_t* datas[1] = { data };
+        size_t   lens[1]  = { len };
+        int      txs[1]   = { tx };
+        return TransferAwaiter<1>(*this, datas, lens, txs, timeout);
+    }
+
     // 多段传输接口
     template <int N = 2> TransferAwaiter<N> transfer_multi_await(uint8_t* (&datas)[N], size_t (&lens)[N], int (&txs)[N])
     {
         return TransferAwaiter<N>(*this, datas, lens, txs);
+    }
+
+    // 多段传输（统一超时，作用于所有 RX 段）
+    template <int N = 2>
+    TransferAwaiter<N> transfer_multi_await(uint8_t* (&datas)[N], size_t (&lens)[N], int (&txs)[N], uint8_t timeout)
+    {
+        return TransferAwaiter<N>(*this, datas, lens, txs, timeout);
     }
 
 private:

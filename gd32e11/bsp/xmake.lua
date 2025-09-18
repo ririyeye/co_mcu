@@ -26,6 +26,12 @@ option("gd32_i2c")
     set_description("Enable building GD32 I2C function")
 option_end()
 
+option("gd32_adc")
+    set_default(true)
+    set_showmenu(true)
+    set_description("Enable building GD32 ADC function (coroutine version)")
+option_end()
+
 
 target("gd32e11_bsp")
 
@@ -155,6 +161,17 @@ if has_config("gd32_i2c") then
 
     add_includedirs(
         "co_driver/i2c", {public=true}
+    )
+end
+
+-- adc (受开关控制)
+if has_config("gd32_adc") then
+    add_files(
+        "co_driver/adc/co_adc.cpp"
+        -- , {optimize = "none"}
+    )
+    add_includedirs(
+        "co_driver/adc", {public=true}
     )
 end
 
