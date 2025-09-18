@@ -14,7 +14,7 @@ target("led")
     )
 
     add_files(
-        "../bsp/Firmware/gd32e11_script/gd32e11x_flash.lld", {
+        "../Firmware/gd32e11_script/gd32e11x_flash.lld", {
             rule = "modifyld",
             cfg = path.join(os.scriptdir(), "cfg.json"),
             origin = "led",

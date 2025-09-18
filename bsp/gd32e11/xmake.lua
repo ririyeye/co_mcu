@@ -41,10 +41,13 @@ target("gd32e11_bsp")
 
     set_kind("static")
 
-    add_files("syswork.cpp")
-
     add_includedirs(
         ".", {public=true}
+    )
+
+    -- 公共协程驱动头文件（转发）
+    add_includedirs(
+        "../driver", {public=true}
     )
 
     add_files("Firmware/gcc_startup/startup_gd32e11x.S")
@@ -176,3 +179,33 @@ if has_config("gd32_adc") then
 end
 
 target_end()
+
+target("gd32e11")
+    set_kind("static")
+
+    add_deps("gd32e11_bsp")
+
+    add_includedirs(
+        ".", {public=true}
+    )
+
+    add_files(
+        "syswork.cpp",
+        "systick.cpp",
+        "lock_imp.cpp"
+    )
+
+target_end()
+
+-- 选项：是否编译 gd32 led 测试示例（依赖 gd32）
+option("gd32_test")
+    add_deps("gd32")
+    set_default(false)
+    set_showmenu(true)
+    set_description("Build GD32 LED test example")
+option_end()
+
+-- 测试示例按需加入
+if has_config("gd32_test") then
+    includes("led_test")
+end
