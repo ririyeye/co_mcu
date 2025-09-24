@@ -179,14 +179,6 @@ target("gd32e11")
 
 target_end()
 
--- 选项：是否编译 gd32 led 测试示例（依赖 gd32）
-option("gd32_test")
-    add_deps("gd32")
-    set_default(false)
-    set_showmenu(true)
-    set_description("Build GD32 LED test example")
-option_end()
-
 -- 测试示例按需加入
 if has_config("gd32_test") then
     includes("led_test")
