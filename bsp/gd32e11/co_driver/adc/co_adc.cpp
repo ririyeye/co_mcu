@@ -19,11 +19,10 @@ struct adc_hard_info {
         uint32_t        gpio_pin;
         rcu_periph_enum gpio_rcu;
         uint8_t         adc_channel;
-    } chan[18];
-    uint32_t avail_map { 0 };
-    uint8_t  idx { 0 };
-
-    void (*spi_pin_cfg)(const struct adc_hard_info* pinfo) { nullptr }; // 兼容接口名（未使用）
+        uint8_t         chan_idx; // 通道索引
+    };
+    const channel* channels;      // 指向通道数组的指针
+    uint8_t        channel_count; // 通道数量
 };
 
 struct adc_handle : worknode {
@@ -42,60 +41,31 @@ struct adc_handle : worknode {
     Semaphore<cortex_lock> sem; // 作为“独占”句柄互斥
 };
 
-static void adc0_pin_cfg(const struct adc_hard_info* pinfo)
-{
-    (void)pinfo;
-    // 内部通道无需 GPIO；若后续开放外部通道，可在此配置
-}
+// ADC0 通道定义（内部温度传感器和基准电压）
+static const adc_hard_info::channel adc0_channels[] = {
+    { 0, 0, (rcu_periph_enum)0, ADC_CHANNEL_16, 16 }, // 温度传感器
+    { 0, 0, (rcu_periph_enum)0, ADC_CHANNEL_17, 17 }, // 基准电压
+};
+
+// ADC1 通道定义（外部 GPIO 通道）
+static const adc_hard_info::channel adc1_channels[] = {
+    { GPIOA, GPIO_PIN_0, RCU_GPIOA, ADC_CHANNEL_0, 0 },
+    { GPIOA, GPIO_PIN_1, RCU_GPIOA, ADC_CHANNEL_1, 1 },
+};
 
 static const struct adc_hard_info adc_info_0 = {
-    RCU_ADC0,
-    ADC0_1_IRQn,
-    ADC0,
-    // 仅开放内部温感/Vref
-    {
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     {},
-     { 0, 0, (rcu_periph_enum)0, ADC_CHANNEL_16 }, // 16: temp
-        { 0, 0, (rcu_periph_enum)0, ADC_CHANNEL_17 }, // 17: vref
-    },
-    (1u << 16) | (1u << 17),
-    0,
-    adc0_pin_cfg,
+    RCU_ADC0, ADC0_1_IRQn, ADC0, adc0_channels, sizeof(adc0_channels) / sizeof(adc0_channels[0]),
 };
 
 static const struct adc_hard_info adc_info_1 = {
-    RCU_ADC1,
-    ADC0_1_IRQn,
-    ADC1,
-    {
-      { GPIOA, GPIO_PIN_0, RCU_GPIOA, ADC_CHANNEL_0 },
-      { GPIOA, GPIO_PIN_1, RCU_GPIOA, ADC_CHANNEL_1 },
-      },
-    (1u << 0) | (1u << 1),
-    1,
-    nullptr,
+    RCU_ADC1, ADC0_1_IRQn, ADC1, adc1_channels, sizeof(adc1_channels) / sizeof(adc1_channels[0]),
 };
 
-static void adc_chan_gpio_cfg(const struct adc_hard_info* padc, int chan_idx)
+static void adc_chan_gpio_cfg(const adc_hard_info::channel* chan)
 {
     rcu_periph_clock_enable(RCU_AF);
-    rcu_periph_clock_enable(padc->chan[chan_idx].gpio_rcu);
-    gpio_init(padc->chan[chan_idx].gpio_periph, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_MAX, padc->chan[chan_idx].gpio_pin);
+    rcu_periph_clock_enable(chan->gpio_rcu);
+    gpio_init(chan->gpio_periph, GPIO_MODE_IN_FLOATING, GPIO_OSPEED_MAX, chan->gpio_pin);
 }
 
 static void adc_nvic_config(const struct adc_hard_info* padc)
@@ -135,8 +105,20 @@ static void adc_setup_once(adc_handle* ph, adc_session* sess)
 {
     const auto* padc = &ph->mInfo;
     const int   ch   = sess->chan_idx;
-    adc_regular_channel_config(padc->adc_periph, 0U, padc->chan[ch].adc_channel, sess->sample_time);
-    adc_software_trigger_enable(padc->adc_periph, ADC_REGULAR_CHANNEL);
+
+    // 找到对应的通道
+    const adc_hard_info::channel* target_chan = nullptr;
+    for (uint8_t i = 0; i < padc->channel_count; ++i) {
+        if (padc->channels[i].chan_idx == ch) {
+            target_chan = &padc->channels[i];
+            break;
+        }
+    }
+
+    if (target_chan) {
+        adc_regular_channel_config(padc->adc_periph, 0U, target_chan->adc_channel, sess->sample_time);
+        adc_software_trigger_enable(padc->adc_periph, ADC_REGULAR_CHANNEL);
+    }
 }
 
 static int adc_irq_cpl_critical(adc_handle* handle, uint16_t val)
@@ -188,14 +170,17 @@ static void adc_hard_init(const adc_hard_info& hard)
 {
     adc_nvic_config(&hard);
     adc_periph_init(&hard);
-    // 配置通道对应 GPIO（内部通道无需）
-    for (size_t idx = 0; idx < 18; ++idx) {
-        if (idx == 16 || idx == 17) {
-            if (hard.idx == 0) {
+    // 配置通道对应 GPIO
+    for (uint8_t i = 0; i < hard.channel_count; ++i) {
+        const auto& chan = hard.channels[i];
+        if (chan.chan_idx == 16 || chan.chan_idx == 17) {
+            // 内部通道（温度传感器和基准电压）
+            if (hard.adc_periph == ADC0) {
                 adc_tempsensor_vrefint_enable();
             }
-        } else if (hard.avail_map & (1u << idx)) {
-            adc_chan_gpio_cfg(&hard, (int)idx);
+        } else {
+            // 外部 GPIO 通道
+            adc_chan_gpio_cfg(&chan);
         }
     }
 }
